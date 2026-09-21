@@ -173,7 +173,7 @@ fn setup(
                 font_size: 18.0,
                 ..default()
             },
-            InspectionText,
+            InspectionLabel,
         ));
         panel.spawn((
             Button,
@@ -211,8 +211,7 @@ fn setup(
                 ..default()
             },
             TextColor(Color::srgb(0.68, 0.74, 0.68)),
-            InspectionText,
-            LogText,
+            LogLabel,
         ));
     });
 }
@@ -274,7 +273,7 @@ fn select_npc(
 fn update_inspection_panel(
     selection: Res<Selection>,
     npcs: Query<&Npc>,
-    mut text: Query<&mut Text, (With<InspectionText>, Without<LogText>)>,
+    mut text: Query<&mut Text, With<InspectionLabel>>,
 ) {
     let Ok(mut text) = text.single_mut() else {
         return;
@@ -355,7 +354,7 @@ fn process_npc_death(
     }
 }
 
-fn update_log(log: Res<WorldLog>, mut text: Query<&mut Text, With<LogText>>) {
+fn update_log(log: Res<WorldLog>, mut text: Query<&mut Text, With<LogLabel>>) {
     if !log.is_changed() {
         return;
     }
