@@ -15,15 +15,23 @@ This repository currently contains:
 
 - [PART I — The Substrate (Extensions)](PART_I_EXTENSIONS.md)
 
-## Prototype run
+## Bevy prototype
 
-From this folder:
+This is the first playable slice from the master plan's Bevy bake-off:
+
+- ten named neighbors wander a small map;
+- click a neighbor to inspect their mood and opinion of you;
+- select **KILL** to drive an event cascade;
+- the cascade log shows death, grief, opinion loss, and gossip.
+
+Install Rust, then from this folder run:
 
 ```bash
 cargo run
 ```
 
-This runs the local Bevy prototype and is intended as the playable slice for testing the underlying systems before expanding into the larger historical simulation.
+The simulation logic is kept in systems and messages so the visual layer can
+later be replaced without changing the cascade behavior.
 
 ## Design direction
 
