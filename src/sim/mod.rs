@@ -1,0 +1,19 @@
+//! The simulation, with no engine in it (§21).
+//!
+//! Everything here is plain Rust on plain data. The Bevy view reads from it
+//! and calls the player verbs; the headless runner just prints what happens.
+
+pub mod attribution;
+pub mod calendar;
+pub mod chronicle;
+pub mod events;
+pub mod rng;
+pub mod systems;
+pub mod world;
+
+pub use calendar::Day;
+pub use events::{EventId, EventKind, FireCause, Suspect, WorldEvent};
+pub use world::{Faction, NpcId, PLAYER, World};
+
+#[cfg(test)]
+mod tests;
