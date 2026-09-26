@@ -11,6 +11,7 @@ pub mod economy;
 pub mod events;
 pub mod history;
 pub mod market;
+pub mod nations;
 pub mod psyche;
 pub mod rng;
 pub mod systems;

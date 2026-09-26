@@ -120,6 +120,32 @@ pub fn candidates(
         _ => {}
     }
 
+    // Lost stock: settlers reach for the nearest nation.
+    let stock_loss = is_theft
+        || matches!(
+            ev.kind,
+            EventKind::Cruelty {
+                act: Cruelty::KillStock,
+                ..
+            }
+        );
+    if stock_loss {
+        // Whichever nation the observer most suspects.
+        let nid = super::nations::NationId::ALL
+            .into_iter()
+            .max_by(|a, b| {
+                super::nations::suspicion(world, observer, *a, site)
+                    .total_cmp(&super::nations::suspicion(world, observer, *b, site))
+            })
+            .unwrap_or(super::nations::NationId::Delaware);
+        out.push(Candidate {
+            suspect: Suspect::Nation(nid),
+            score: super::nations::suspicion(world, observer, nid, site)
+                + rumor_for(Suspect::Nation(nid)),
+            reason: "they've been coming around hungry",
+        });
+    }
+
     if is_theft {
         // Cows wander. Sometimes that's all it was.
         out.push(Candidate {

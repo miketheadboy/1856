@@ -10,6 +10,7 @@ use super::events::{
 };
 use super::history;
 use super::market::{self, Good, Market};
+use super::nations::{self, Nation, NationId};
 use super::psyche::{self, Body, Emotions, Ideology, Temperament};
 use super::rng::SimRng;
 use super::systems;
@@ -90,6 +91,8 @@ pub struct Npc {
     pub wounded: bool,
     /// Luck and malice. The player never sees these.
     pub hidden: Hidden,
+    /// Taken into a nation's kin network; gone from settler society.
+    pub adopted_by: Option<NationId>,
 }
 
 impl Npc {
@@ -147,6 +150,13 @@ pub struct Family {
     pub store: bool,
 }
 
+impl Family {
+    /// Works land and eats from its own stores.
+    pub fn farms(&self) -> bool {
+        !self.store
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Weather {
     pub storm: bool,
@@ -196,6 +206,7 @@ pub struct World {
     pub pacified_until: Option<Day>,
     /// After the Panic of 1857, credit is tight.
     pub credit_crunch: bool,
+    pub nations: Vec<Nation>,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -373,6 +384,7 @@ impl World {
             ideology: Ideology::for_faction(Faction::FreeState, 0.6),
             wounded: false,
             hidden: Hidden::default(),
+            adopted_by: None,
         }];
         let mut given: Vec<&str> = GIVEN_NAMES.to_vec();
         for family in families.iter() {
@@ -423,6 +435,7 @@ impl World {
                     ideology,
                     wounded: false,
                     hidden,
+                    adopted_by: None,
                 });
             }
         }
@@ -449,6 +462,7 @@ impl World {
             press: history::Press::default(),
             pacified_until: None,
             credit_crunch: false,
+            nations: nations::founding(),
         };
 
         // Winter stores: most families went into 1855 short.
@@ -516,8 +530,11 @@ impl World {
             .map(|n| n.id)
     }
 
+    /// Everyone alive and still part of settler society.
     pub fn living(&self) -> impl Iterator<Item = &Npc> {
-        self.npcs.iter().filter(|n| n.alive)
+        self.npcs
+            .iter()
+            .filter(|n| n.alive && n.adopted_by.is_none())
     }
 
     pub fn player_alive(&self) -> bool {
@@ -684,6 +701,30 @@ impl World {
     /// the good stands are on someone else's land.
     fn rebuild_barns(&mut self) {
         let today = self.day.0;
+        // No cash for timber after a month: the less scrupulous cut it on
+        // treaty land (§7.3's ring of scarcity, and someone else's trees).
+        let short: Vec<FamilyId> = self
+            .families
+            .iter()
+            .filter(|f| {
+                f.farms()
+                    && f.barn_burned_on
+                        .is_some_and(|d| today == d.0 + REBUILD_DAYS)
+                    && f.stores.goods[Good::Timber.index()] < 4.0
+            })
+            .map(|f| f.id)
+            .collect();
+        for fid in short {
+            let Some(head) = self.head_of(fid) else {
+                continue;
+            };
+            if self
+                .rng
+                .chance(1.0 - self.npc(head).temperament.honesty * 0.7)
+            {
+                nations::cut_reserve_timber(self, fid);
+            }
+        }
         for f in &mut self.families {
             let timber = &mut f.stores.goods[Good::Timber.index()];
             if f.barn_burned_on
@@ -808,6 +849,7 @@ impl World {
         for g in &mut self.grievance {
             *g = (*g - 12).max(0);
         }
+        nations::monthly(self);
     }
 
     // ---- player verbs --------------------------------------------------

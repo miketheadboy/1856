@@ -310,6 +310,16 @@ fn belief_system(world: &mut World, ev: &WorldEvent) {
         weight,
     });
 
+    // Blaming a nation becomes a depredation claim against its annuity.
+    if let Suspect::Nation(nid) = blamed
+        && stake >= 1.0
+        && confidence >= ACCUSATION_CONFIDENCE
+        && matches!(source, Source::Victim | Source::Told(_))
+    {
+        let dollars = if is_theft { 16.0 } else { 12.0 };
+        super::nations::depredation_claim(world, nid, holder, dollars);
+    }
+
     if let Suspect::Person(target) = blamed
         && target != holder
         && confidence >= ACCUSATION_CONFIDENCE

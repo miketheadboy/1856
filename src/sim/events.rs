@@ -22,6 +22,8 @@ pub enum Suspect {
     Nature,
     Accident,
     Person(NpcId),
+    /// Settler prejudice's favorite answer for lost stock (see `nations`).
+    Nation(super::nations::NationId),
 }
 
 /// What actually started a fire. All four look identical afterward (§12).
@@ -196,6 +198,36 @@ pub enum EventKind {
         about: Option<EventId>,
         blamed: Option<Suspect>,
         history: Option<usize>,
+    },
+    /// Timber cut on treaty land.
+    Trespass {
+        family: FamilyId,
+        nation: super::nations::NationId,
+    },
+    Annuity {
+        nation: super::nations::NationId,
+        paid: u32,
+        docked: u32,
+    },
+    /// A nation protests to its agent. Washington rarely acts.
+    Complaint {
+        nation: super::nations::NationId,
+        acted: bool,
+    },
+    /// Riders from one side or the other took what they wanted on reserve land.
+    Plundered {
+        nation: super::nations::NationId,
+    },
+    /// A hungry family at a settler's door.
+    Visit {
+        nation: super::nations::NationId,
+        host: NpcId,
+        fed: bool,
+    },
+    /// Taken in by council.
+    Adopted {
+        person: NpcId,
+        nation: super::nations::NationId,
     },
     /// A big move in a price at the store.
     PriceMove {

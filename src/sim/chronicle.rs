@@ -16,11 +16,20 @@ fn who(world: &World, id: NpcId) -> String {
     }
 }
 
+fn whose(world: &World, id: NpcId) -> String {
+    if id == PLAYER {
+        "your".into()
+    } else {
+        format!("{}'s", world.name(id))
+    }
+}
+
 pub fn suspect_label(world: &World, s: Suspect) -> String {
     match s {
         Suspect::Nature => "lightning".into(),
         Suspect::Accident => "an accident".into(),
         Suspect::Person(p) => who(world, p),
+        Suspect::Nation(n) => format!("the {}", n.name()),
     }
 }
 
@@ -256,6 +265,55 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Cruelty::FoulWell => format!("[CRUELTY] The well at {} was fouled{}", place, truth),
             }
         }
+        EventKind::Trespass { family, nation } => format!(
+            "[LAND] {} cut timber on {} land",
+            capitalize(&family_label(world, family)),
+            nation.name()
+        ),
+        EventKind::Annuity {
+            nation,
+            paid,
+            docked,
+        } => {
+            if docked > 0 {
+                format!(
+                    "[TREATY] The {} annuity paid: ${}, less ${} docked for settler claims",
+                    nation.name(),
+                    paid,
+                    docked
+                )
+            } else {
+                format!("[TREATY] The {} annuity paid: ${}", nation.name(), paid)
+            }
+        }
+        EventKind::Complaint { nation, acted } => format!(
+            "[TREATY] The {} protest trespass to their agent{}",
+            nation.name(),
+            if acted {
+                ". Squatters are ordered off"
+            } else {
+                ". Nothing is done"
+            }
+        ),
+        EventKind::Plundered { nation } => format!(
+            "[LAND] Armed riders crossed {} land and took stock and corn",
+            nation.name()
+        ),
+        EventKind::Visit { nation, host, fed } => format!(
+            "[VISIT] A hungry {} family came to {} door{}",
+            nation.name(),
+            whose(world, host),
+            if fed {
+                " and was fed"
+            } else {
+                " and was sent away"
+            }
+        ),
+        EventKind::Adopted { person, nation } => format!(
+            "[KIN] {} was taken in by the {}",
+            capitalize(&who(world, person)),
+            nation.name()
+        ),
         EventKind::History { index } => {
             format!("[NEWS] {}", super::history::TIMELINE[index].title)
         }
