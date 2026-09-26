@@ -744,6 +744,85 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             world.families[family as usize].surname,
             price
         ),
+        EventKind::SeekerAtDoor { seeker, family } => {
+            let s = &world.railroad.seekers[seeker as usize];
+            format!(
+                "[NIGHT] A knock at {} after dark: {}, from {}",
+                if family == 0 {
+                    "your door".to_string()
+                } else {
+                    format!("the {} door", world.families[family as usize].surname)
+                },
+                s.name,
+                s.from
+            )
+        }
+        EventKind::Sheltered { seeker, family } => format!(
+            "[RAILROAD] {} hid {} in the loft",
+            if family == 0 {
+                "You".to_string()
+            } else {
+                format!("The {}", plural(world.families[family as usize].surname))
+            },
+            world.railroad.name(seeker)
+        ),
+        EventKind::TurnedAway { seeker, family } => format!(
+            "[RAILROAD] {} turned {} away",
+            if family == 0 {
+                "You".to_string()
+            } else {
+                format!("The {}", plural(world.families[family as usize].surname))
+            },
+            world.railroad.name(seeker)
+        ),
+        EventKind::Pursuers { seeker } => format!(
+            "[PURSUIT] Men from {} rode through asking after {}",
+            world.railroad.seekers[seeker as usize].from,
+            world.railroad.name(seeker)
+        ),
+        EventKind::Captured {
+            seeker,
+            at,
+            informer,
+        } => {
+            let place = at
+                .map(|f| format!(" at the {} place", world.families[f as usize].surname))
+                .unwrap_or_default();
+            let told = match informer {
+                Some(i) if omniscient || i == PLAYER => format!(" [told: {}]", who(world, i)),
+                _ => String::new(),
+            };
+            format!(
+                "[PURSUIT] {} was taken{} and carried back to Missouri{}",
+                world.railroad.name(seeker),
+                place,
+                told
+            )
+        }
+        EventKind::Freedom { seeker } => format!(
+            "[RAILROAD] Word came back: {} reached free soil",
+            world.railroad.name(seeker)
+        ),
+        EventKind::Charged {
+            accused,
+            convicted,
+            fine,
+        } => format!(
+            "[COURT] {} charged with harboring a fugitive: {}",
+            capitalize(&who(world, accused)),
+            if convicted {
+                format!("convicted, fined ${fine}")
+            } else {
+                "let go".to_string()
+            }
+        ),
+        EventKind::Cornered { buyer, good, units } => format!(
+            "[MARKET] Dunmore says {} bought him out: {} {} of {}",
+            who(world, buyer),
+            units,
+            good.unit(),
+            good.label()
+        ),
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),
@@ -881,6 +960,9 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
     match ev.kind {
         EventKind::Gossip { .. } | EventKind::Grief { .. } => false,
         EventKind::Retaliation { .. } | EventKind::Spared { .. } => omniscient,
+        EventKind::SeekerAtDoor { family, .. }
+        | EventKind::Sheltered { family, .. }
+        | EventKind::TurnedAway { family, .. } => omniscient || family == 0,
         EventKind::Affair { a, b } => omniscient || a == PLAYER || b == PLAYER,
         EventKind::Blackmail {
             paid: true,

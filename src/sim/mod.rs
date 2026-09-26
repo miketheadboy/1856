@@ -29,6 +29,7 @@ pub mod market;
 pub mod mortality;
 pub mod nations;
 pub mod psyche;
+pub mod railroad;
 pub mod reconcile;
 pub mod rng;
 pub mod romance;

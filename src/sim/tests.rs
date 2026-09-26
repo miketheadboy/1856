@@ -201,28 +201,36 @@ fn some_seed_produces_a_war_nobody_started() {
     );
 }
 
-/// The player can corner corn. The county notices.
+/// The player can corner corn. The county notices: compared with the same
+/// winter where they didn't, their name is worse.
 #[test]
 fn cornering_corn_spikes_the_price_and_breeds_resentment() {
     use super::market::Good;
-    let mut w = World::new(21);
-    w.winter_severity = 1.6;
-    w.autopilot_player = false;
-    w.run_days(60); // into the cold
-    let before = w.market.price(Good::Corn);
-    w.families[0].stores.cash = 5000;
-    w.player_buy(Good::Corn, 10_000.0);
-    assert!(w.market.stock(Good::Corn) < 1.0, "bought the store out");
-    w.run_days(1);
+    let run = |corner: bool| {
+        let mut w = World::new(21);
+        w.winter_severity = 1.6;
+        w.autopilot_player = false;
+        w.run_days(60); // into the cold
+        let before = w.market.price(Good::Corn);
+        if corner {
+            w.families[0].stores.cash = 5000;
+            w.player_buy(Good::Corn, 10_000.0);
+            assert!(w.market.stock(Good::Corn) < 1.0, "bought the store out");
+            w.run_days(1);
+            assert!(
+                w.market.price(Good::Corn) > before * 2.0,
+                "scarcity moves the price"
+            );
+        } else {
+            w.run_days(1);
+        }
+        w.run_days(30);
+        super::psyche::reputation(&w, PLAYER)
+    };
+    let (hoarder, neighbor) = (run(true), run(false));
     assert!(
-        w.market.price(Good::Corn) > before * 2.0,
-        "scarcity moves the price"
-    );
-    let rep_before: f32 = super::psyche::reputation(&w, PLAYER);
-    w.run_days(90);
-    assert!(
-        super::psyche::reputation(&w, PLAYER) < rep_before,
-        "the hoarder's name goes bad in a hungry winter"
+        hoarder < neighbor,
+        "the hoarder's name goes bad in a hungry winter: {hoarder} vs {neighbor}"
     );
 }
 

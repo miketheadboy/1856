@@ -54,6 +54,7 @@ Sim modules (`src/sim/`):
 | `bees` | husking bees (shuck the host's corn, the red ear), quilting bees (quilts cut winter need), spelling bees, singing school (courting); the union meeting that mixes both sides until tension splits it North and South |
 | `land` | Lawrence town lots through the 1856 emigration, the Sack, the 1857 boom and the Panic; buying a broken family's relinquishment (they depart for the States) |
 | `intrigue` | the player's dark verbs: secrets learned at the groggery or by moonlight, blackmail, exposure, sabotage (shoot a cow, foul a well, cut a fence, wet the hay) read through attribution, slander |
+| `railroad` | the Underground Railroad (MVP §25): freedom seekers who pick doors by word and travel in the dark of the moon; families answer by private belief (hide, turn away, turn in for the reward); food as evidence; pursuers who linger and ask; captures read by attribution; harboring charged under the 1855 slave code |
 | `legacy` | the papers write you up (readers take the paper's view of you); a scandal shuts the store's book; your children drift toward your path and, near grown, take after you or rebel |
 | `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |
@@ -129,6 +130,8 @@ trips the Westport blockade early); fires run ~25 per two years.
   narration of what the code obviously does.
 - Chronicle text is period-plain and short. The default Bevy font lacks some
   glyphs; the view runs text through `plain()`.
+- The view shows only the verbs that apply today (`available` in main.rs):
+  the ballot on election day, the door when someone's knocking.
 - Visual style: survey plat on charcoal, bone type, live greens and river
   blue, oxblood and brass accents. A few quiet Dylan nods (names, "a hard
   rain", the death line). Titles and allusions only, never lyrics.

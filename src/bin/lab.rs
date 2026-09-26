@@ -556,7 +556,7 @@ fn life_routine(o: &Opts) {
 }
 
 fn county(o: &Opts) {
-    let mut t = [0usize; 7];
+    let mut t = [0usize; 11];
     for seed in 1..=o.seeds {
         let mut w = World::with_winter(seed, o.winter);
         w.run_days(o.days);
@@ -569,6 +569,10 @@ fn county(o: &Opts) {
                 EventKind::ClaimFiled { delayed: true, .. } => 4,
                 EventKind::Built { .. } => 5,
                 EventKind::FeudEnded { .. } => 6,
+                EventKind::SeekerAtDoor { .. } => 7,
+                EventKind::Freedom { .. } => 8,
+                EventKind::Captured { .. } => 9,
+                EventKind::Charged { .. } => 10,
                 _ => continue,
             };
             t[i] += 1;
@@ -583,6 +587,10 @@ fn county(o: &Opts) {
         "papers mislaid",
         "projects built",
         "feuds ended",
+        "knocks at a door",
+        "reached freedom",
+        "taken back",
+        "charged",
     ]
     .iter()
     .zip(t)

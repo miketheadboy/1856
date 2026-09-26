@@ -19,6 +19,7 @@ use bleeding_kansas::sim::life::{self, Activity, Skill};
 use bleeding_kansas::sim::market::Good;
 use bleeding_kansas::sim::nations::NationId;
 use bleeding_kansas::sim::psyche::{self, Condition};
+use bleeding_kansas::sim::railroad::Answer;
 use bleeding_kansas::sim::world::{Faction, FamilyId, NpcId, PLAYER, World};
 
 const TILE: f32 = 12.0;
@@ -166,6 +167,7 @@ fn main() {
                 draw_barns,
                 draw_spirits,
                 update_panels,
+                show_buttons,
             )
                 .chain(),
         )
@@ -362,7 +364,7 @@ fn button_row(
                 row.spawn((
                     Button,
                     Node {
-                        padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                        padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
                         border: UiRect::all(Val::Px(1.0)),
                         ..default()
                     },
@@ -370,9 +372,62 @@ fn button_row(
                     BackgroundColor(*color),
                     *action,
                 ))
-                .with_child((Text::new(*label), text(font, 13.0, BONE)));
+                .with_child((Text::new(*label), text(font, 12.0, BONE)));
             }
         });
+}
+
+/// Only what makes sense today: the ballot on election day, the door when
+/// someone's knocking, the meeting after it splits.
+fn available(world: &World, action: Action, selected: bool) -> bool {
+    let muster = world.law.muster.is_some() && !world.law.player_answered;
+    let at_door = world.railroad.at_door.is_some();
+    let hiding = world
+        .railroad
+        .seekers
+        .iter()
+        .any(|s| s.status == bleeding_kansas::sim::railroad::Status::Hidden(0));
+    match action {
+        Action::Kill
+        | Action::Burn
+        | Action::Steal
+        | Action::Visit
+        | Action::Court
+        | Action::Baptize
+        | Action::Sue
+        | Action::BuyClaim
+        | Action::Broker
+        | Action::Dark(_) => selected,
+        Action::Do(Activity::Vote { .. }) => law::election_today(world).is_some(),
+        Action::Do(Activity::Muster { .. }) => muster,
+        Action::Do(Activity::Answer(_)) => at_door,
+        Action::Do(Activity::Guide) => hiding,
+        Action::Do(Activity::Gather) => world.gatherings.today.is_some(),
+        Action::Do(Activity::Church { .. }) => {
+            world.gatherings.split.is_some() && world.gatherings.side_of(PLAYER).is_none()
+        }
+        Action::Do(Activity::Trap) => matches!(world.day.month(), 11 | 12 | 1 | 2 | 3),
+        Action::Do(Activity::SellLot) => world.land.lots > 0,
+        Action::Sign(_) => world.pending_favor.is_some(),
+        _ => true,
+    }
+}
+
+fn show_buttons(
+    sim: Res<Sim>,
+    selection: Res<Selection>,
+    mut buttons: Query<(&Action, &mut Node)>,
+) {
+    for (action, mut node) in &mut buttons {
+        let want = if available(&sim.0, *action, selection.0.is_some()) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if node.display != want {
+            node.display = want;
+        }
+    }
 }
 
 fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
@@ -510,6 +565,22 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                         "WET THE HAY",
                         red,
                     ),
+                    (
+                        Action::Do(Activity::Answer(Answer::Shelter)),
+                        "HIDE THEM",
+                        green,
+                    ),
+                    (
+                        Action::Do(Activity::Answer(Answer::TurnAway)),
+                        "TURN AWAY",
+                        gray,
+                    ),
+                    (
+                        Action::Do(Activity::Answer(Answer::Betray)),
+                        "TURN THEM IN",
+                        red,
+                    ),
+                    (Action::Do(Activity::Guide), "GUIDE NORTH", green),
                     (Action::Leave(Errand::Buffalo), "LEAVE A WHILE", gray),
                 ],
             );
@@ -1001,6 +1072,13 @@ fn your_life(world: &World) -> String {
             "Tonight: a {} at the {} place.\n",
             bee.label(),
             world.families[*host as usize].surname
+        ));
+    }
+    if let Some(id) = world.railroad.at_door {
+        let seeker = &world.railroad.seekers[id as usize];
+        s.push_str(&format!(
+            "A KNOCK AFTER DARK: {}, from {}, asking to be hidden.\n",
+            seeker.name, seeker.from
         ));
     }
     if let Some(e) = law::election_today(world) {

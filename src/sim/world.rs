@@ -238,6 +238,8 @@ pub struct World {
     pub gatherings: super::bees::Gatherings,
     /// Town lots and bought-out claims.
     pub land: super::land::Land,
+    /// Freedom seekers, the houses that help, the men who follow.
+    pub railroad: super::railroad::Railroad,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -488,6 +490,7 @@ impl World {
             law: super::law::Law::default(),
             gatherings: super::bees::Gatherings::default(),
             land: super::land::Land::default(),
+            railroad: super::railroad::Railroad::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -772,6 +775,7 @@ impl World {
         super::mail::daily(self);
         super::law::daily(self);
         super::bees::daily(self);
+        super::railroad::daily(self);
         super::civic::daily(self);
         super::life::daily(self);
         systems::spread_gossip(self);
@@ -1051,7 +1055,19 @@ impl World {
         if !self.player_alive() {
             return 0.0;
         }
+        let stock = self.market.stock(good);
         let got = market::buy(self, 0, good, qty);
+        // Buy out most of the store in a lean season and Dunmore will say who.
+        if good == Good::Corn && got >= 30.0 && got >= stock * 0.5 {
+            self.emit_root(
+                EventKind::Cornered {
+                    buyer: PLAYER,
+                    good,
+                    units: got as u16,
+                },
+                None,
+            );
+        }
         self.run_cascades();
         got
     }

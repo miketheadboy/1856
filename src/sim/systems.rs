@@ -44,6 +44,8 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::bees::on_event(world, ev);
     super::legacy::on_event(world, ev);
     super::land::on_event(world, ev);
+    super::railroad::on_event(world, ev);
+    super::market::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
@@ -153,6 +155,14 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         EventKind::Death { victim, killer } => (victim, killer, true),
         EventKind::Theft { thief, victim, .. } => (victim, Some(thief), false),
         EventKind::Strayed { owner } => (owner, None, false),
+        EventKind::Captured {
+            at: Some(f),
+            informer,
+            ..
+        } => match world.head_of(f) {
+            Some(h) => (h, informer, false),
+            None => return,
+        },
         EventKind::Cruelty {
             actor,
             victim,

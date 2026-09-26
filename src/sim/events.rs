@@ -454,6 +454,45 @@ pub enum EventKind {
         seller: NpcId,
         price: u16,
     },
+    /// Someone escaping slavery knocks, on a dark night.
+    SeekerAtDoor {
+        seeker: u16,
+        family: FamilyId,
+    },
+    Sheltered {
+        seeker: u16,
+        family: FamilyId,
+    },
+    TurnedAway {
+        seeker: u16,
+        family: FamilyId,
+    },
+    /// Slave catchers ride through asking questions.
+    Pursuers {
+        seeker: u16,
+    },
+    /// Taken back. `at` is the house they were found in; `informer` who talked.
+    Captured {
+        seeker: u16,
+        at: Option<FamilyId>,
+        informer: Option<NpcId>,
+    },
+    /// Reached free soil to the north.
+    Freedom {
+        seeker: u16,
+    },
+    /// Harboring a fugitive under the 1855 slave code.
+    Charged {
+        accused: NpcId,
+        convicted: bool,
+        fine: u16,
+    },
+    /// Somebody bought the store out. Everyone hears who.
+    Cornered {
+        buyer: NpcId,
+        good: super::market::Good,
+        units: u16,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

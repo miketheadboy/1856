@@ -553,6 +553,32 @@ pub fn resent_hoarders(world: &mut World, hungry_family: FamilyId) {
     let _ = Season::Winter;
 }
 
+/// Word of who bought the store out. The hungry and the hard-up resent it
+/// most; the pious call it sin in a lean winter.
+pub fn on_event(world: &mut World, ev: &super::events::WorldEvent) {
+    if let EventKind::Cornered { buyer, .. } = ev.kind {
+        let lean = world.day.season() == Season::Winter
+            || world.families.iter().any(|f| f.stores.hungry_days > 0);
+        if !lean {
+            return;
+        }
+        let buyer_family = world.npc(buyer).family;
+        let people: Vec<(NpcId, bool, f32)> = world
+            .living()
+            .filter(|n| n.family != buyer_family)
+            .map(|n| {
+                let hungry = world.families[n.family as usize].stores.hungry_days > 0
+                    || world.families[n.family as usize].stores.food < 60.0;
+                (n.id, hungry, n.temperament.piety)
+            })
+            .collect();
+        for (p, hungry, piety) in people {
+            let delta = -(8.0 + if hungry { 15.0 } else { 0.0 } + 8.0 * piety) as i16;
+            world.adjust_opinion(p, buyer, delta);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

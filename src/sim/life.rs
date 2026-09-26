@@ -126,6 +126,10 @@ pub enum Activity {
     Sabotage(NpcId, super::events::Cruelty),
     /// Point a hurt family at somebody.
     Slander(NpcId),
+    /// Answer the knock at your door.
+    Answer(super::railroad::Answer),
+    /// Take who you're hiding north yourself.
+    Guide,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -414,6 +418,27 @@ pub fn act(world: &mut World, what: Activity) -> bool {
             ok
         }
         Activity::Slander(t) => super::intrigue::slander(world, t),
+        Activity::Answer(a) => match world.railroad.at_door {
+            Some(id) => {
+                super::railroad::respond(world, id, 0, a);
+                true
+            }
+            None => false,
+        },
+        Activity::Guide => {
+            let hidden = world
+                .railroad
+                .seekers
+                .iter()
+                .position(|s| s.status == super::railroad::Status::Hidden(0));
+            match hidden {
+                Some(i) if super::railroad::guide(world, i as u16) => {
+                    family::leave_for(world, Errand::Town, 3);
+                    true
+                }
+                _ => false,
+            }
+        }
         Activity::Trap => trap(world),
         Activity::Camp => camp(world),
         Activity::WriteHome => {
@@ -929,6 +954,11 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
         EventKind::Fire { owner, .. } if world.npc(owner).family == 0 => world.life.cheer(-15.0),
         EventKind::Scandal { a, b, .. } if a == PLAYER || b == PLAYER => world.life.cheer(-20.0),
         EventKind::Marriage { a, b } if a == PLAYER || b == PLAYER => world.life.cheer(25.0),
+        EventKind::Freedom { seeker }
+            if world.railroad.seekers[seeker as usize].tried.contains(&0) =>
+        {
+            world.life.cheer(20.0)
+        }
         _ => {}
     }
 }
