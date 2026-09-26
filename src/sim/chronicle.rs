@@ -336,6 +336,30 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 )
             }
         }
+        EventKind::Brawl { venue, a, b } => format!(
+            "[BRAWL] {} and {} came to blows at {}",
+            capitalize(&who(world, a)),
+            who(world, b),
+            venue.name()
+        ),
+        EventKind::Blackmail {
+            victim,
+            extorter,
+            paid,
+        } => {
+            if paid {
+                format!(
+                    "[SECRET] {} paid {} to keep quiet about Westport",
+                    capitalize(&who(world, victim)),
+                    who(world, extorter)
+                )
+            } else {
+                format!(
+                    "[SCANDAL] Word got around about what {} did in Westport",
+                    who(world, victim)
+                )
+            }
+        }
         EventKind::History { index } => {
             format!("[NEWS] {}", super::history::TIMELINE[index].title)
         }
@@ -457,6 +481,7 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
     match ev.kind {
         EventKind::Gossip { .. } | EventKind::Grief { .. } => false,
         EventKind::Retaliation { .. } => omniscient,
+        EventKind::Blackmail { paid: true, .. } => omniscient,
         EventKind::Cruelty {
             act: Cruelty::Slander { .. },
             ..

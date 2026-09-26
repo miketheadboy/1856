@@ -13,6 +13,7 @@ pub mod economy;
 pub mod events;
 pub mod geography;
 pub mod history;
+pub mod institutions;
 pub mod market;
 pub mod nations;
 pub mod psyche;

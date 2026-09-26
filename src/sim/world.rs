@@ -214,6 +214,7 @@ pub struct World {
     pub bison: super::bison::Herd,
     /// One row per day for charts and debugging (see `debug`).
     pub metrics: Vec<super::debug::DailyMetrics>,
+    pub institutions: super::institutions::Institutions,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -441,6 +442,7 @@ impl World {
             map: Map::county(),
             bison: super::bison::Herd::default(),
             metrics: Vec::new(),
+            institutions: super::institutions::Institutions::default(),
         };
         for f in 0..world.families.len() {
             let farm = world.families[f].farm;
@@ -640,6 +642,7 @@ impl World {
         psyche::daily(self);
         character::daily_evil(self);
         systems::spread_gossip(self);
+        super::institutions::weekly(self);
         if self.day.is_first_of_month() {
             self.monthly();
         }
@@ -837,6 +840,7 @@ impl World {
         }
         nations::monthly(self);
         super::bison::monthly(self);
+        super::institutions::monthly(self);
     }
 
     // ---- player verbs --------------------------------------------------

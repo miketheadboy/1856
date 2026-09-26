@@ -238,6 +238,18 @@ pub enum EventKind {
         hunter: NpcId,
         animals: u32,
     },
+    /// A fight at a gathering place.
+    Brawl {
+        venue: super::institutions::Venue,
+        a: NpcId,
+        b: NpcId,
+    },
+    /// Someone sold silence, or couldn't buy it.
+    Blackmail {
+        victim: NpcId,
+        extorter: NpcId,
+        paid: bool,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

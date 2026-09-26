@@ -78,6 +78,8 @@ pub struct Effect {
     pub revive: &'static [Paper],
     /// Extra corn on the eastern market: prices ease.
     pub grain_glut: f32,
+    /// Burns the Free State Hotel.
+    pub burn_hotel: bool,
 }
 
 pub struct Moment {
@@ -199,6 +201,7 @@ pub const TIMELINE: &[Moment] = &[
             zeal_pro: 5.0,
             fear_all: 10.0,
             silence: &[Paper::HeraldOfFreedom, Paper::KansasFreeState],
+            burn_hotel: true,
             ..Effect::ZERO
         },
     },
@@ -384,6 +387,7 @@ impl Effect {
         silence: NONE,
         revive: NONE,
         grain_glut: 0.0,
+        burn_hotel: false,
     };
 }
 
@@ -476,6 +480,9 @@ pub fn apply(world: &mut World, e: &Effect) {
     }
     if e.grain_glut > 0.0 {
         world.market.goods[super::market::Good::Corn.index()].stock += e.grain_glut;
+    }
+    if e.burn_hotel {
+        super::institutions::close(world, super::institutions::Venue::FreeStateHotel);
     }
     for p in e.silence {
         world.press.silenced[p.index()] = true;
