@@ -15,7 +15,7 @@ const AUTHORIZE_AT: i32 = 60;
 /// mutual hatred between two families becomes a feud.
 const HATRED: i16 = -50;
 /// Days after acting on a grudge before someone will plot again.
-const REVENGE_COOLDOWN: u32 = 60;
+const REVENGE_COOLDOWN: u32 = 120;
 /// Below this confidence a belief is a shrug, not an accusation.
 pub const ACCUSATION_CONFIDENCE: u8 = 20;
 
@@ -455,7 +455,7 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
     {
         return;
     }
-    let mut p = 0.2 + 0.08 * h.violence.min(4) as f32;
+    let mut p = 0.10 + 0.08 * h.violence.min(4) as f32;
     if faction_authorized(world, h.faction) {
         p += 0.2;
     }
