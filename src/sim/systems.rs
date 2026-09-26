@@ -36,6 +36,9 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::ghosts::on_event(world, ev);
     super::reconcile::on_event(world, ev);
     super::family::on_event(world, ev);
+    super::romance::on_event(world, ev);
+    super::civic::on_event(world, ev);
+    super::life::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.

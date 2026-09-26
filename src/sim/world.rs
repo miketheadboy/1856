@@ -224,6 +224,12 @@ pub struct World {
     pub metrics: Vec<super::debug::DailyMetrics>,
     pub institutions: super::institutions::Institutions,
     pub ghosts: super::ghosts::Ghosts,
+    /// Couples, courtship, affairs.
+    pub hearts: super::romance::Hearts,
+    /// The player's skills, spirits and the day's doing.
+    pub life: super::life::Life,
+    /// Community projects, land-office claims.
+    pub civic: super::civic::Civic,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -247,6 +253,16 @@ const GIVEN_NAMES: [&str; 32] = [
     "Louise", "Caleb", "Prudence", "Obadiah", "Delia", "Asa", "Hester", "Gideon", "Ramona",
     "Hollis", "Cassius", "Johanna",
 ];
+
+/// Given names that were women's in 1855. Marriage law was one man, one woman.
+const WOMEN: [&str; 15] = [
+    "Martha", "Ruth", "Clara", "Ada", "Sarah", "Lydia", "Hannah", "Abigail", "Maggie", "Louise",
+    "Prudence", "Delia", "Hester", "Ramona", "Johanna",
+];
+
+pub fn is_woman(name: &str) -> bool {
+    WOMEN.contains(&name.split(' ').next().unwrap_or(""))
+}
 
 pub fn distance(a: (i32, i32), b: (i32, i32)) -> f32 {
     let (dx, dy) = ((a.0 - b.0) as f32, (a.1 - b.1) as f32);
@@ -456,7 +472,11 @@ impl World {
             metrics: Vec::new(),
             institutions: super::institutions::Institutions::default(),
             ghosts: super::ghosts::Ghosts::default(),
+            hearts: super::romance::Hearts::default(),
+            life: super::life::Life::default(),
+            civic: super::civic::Civic::default(),
         };
+        world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
             let farm = world.families[f].farm;
             world.families[f].timber_miles = world.map.miles_to_timber(farm);
@@ -487,6 +507,7 @@ impl World {
         }
 
         world.roll_weather();
+        world.civic = super::civic::Civic::founding(&mut world);
         world
     }
 
@@ -681,6 +702,8 @@ impl World {
         super::ghosts::daily(self);
         super::mortality::daily(self);
         super::family::daily(self);
+        super::civic::daily(self);
+        super::life::daily(self);
         systems::spread_gossip(self);
         super::institutions::weekly(self);
         if self.day.is_first_of_month() {
@@ -897,6 +920,8 @@ impl World {
         super::bison::monthly(self);
         super::institutions::monthly(self);
         super::reconcile::monthly(self);
+        super::romance::monthly(self);
+        super::civic::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);
         }
@@ -1019,6 +1044,11 @@ impl World {
         self.truces
             .get(&(a.min(b), a.max(b)))
             .is_some_and(|&d| self.day < d)
+    }
+
+    /// Spend today doing something (§13 life loop). One thing a day.
+    pub fn player_do(&mut self, what: super::life::Activity) -> bool {
+        super::life::act(self, what)
     }
 
     /// Ride between two feuding families and try to talk them down.

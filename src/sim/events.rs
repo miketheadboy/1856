@@ -320,6 +320,58 @@ pub enum EventKind {
         missed: EventId,
         errand: super::family::Errand,
     },
+    /// The player's day: chores, the creek, the woods, a porch, a glass.
+    Pastime {
+        what: super::life::Pastime,
+        amount: u16,
+    },
+    Sermon {
+        preacher: NpcId,
+        flock: u8,
+    },
+    Baptism {
+        preacher: NpcId,
+        convert: NpcId,
+        cold: bool,
+    },
+    Speech {
+        speaker: NpcId,
+        calm: bool,
+        heard: u8,
+    },
+    /// A secret. Only the omniscient chronicle sees it.
+    Affair {
+        a: NpcId,
+        b: NpcId,
+    },
+    /// Somebody saw.
+    Scandal {
+        a: NpcId,
+        b: NpcId,
+        wronged: NpcId,
+    },
+    Marriage {
+        a: NpcId,
+        b: NpcId,
+    },
+    Built {
+        project: super::civic::Project,
+    },
+    ClaimFiled {
+        family: FamilyId,
+        /// The register "lost" the papers.
+        delayed: bool,
+    },
+    ClaimJumped {
+        family: FamilyId,
+        lost: u8,
+        /// A neighbor moved the stakes, or a stranger if None.
+        neighbor: Option<NpcId>,
+    },
+    Festival {
+        holiday: super::civic::Holiday,
+        crowd: u8,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

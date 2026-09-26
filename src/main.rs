@@ -7,10 +7,12 @@
 use bevy::prelude::*;
 use bleeding_kansas::sim::character;
 use bleeding_kansas::sim::chronicle::{self, suspect_label};
+use bleeding_kansas::sim::civic::Project;
 use bleeding_kansas::sim::economy::Choice;
 use bleeding_kansas::sim::events::Source;
-use bleeding_kansas::sim::family::Errand;
+use bleeding_kansas::sim::family::{self, Errand};
 use bleeding_kansas::sim::geography::{self, HEIGHT, PLACES, Terrain, WIDTH};
+use bleeding_kansas::sim::life::{self, Activity, Skill};
 use bleeding_kansas::sim::market::Good;
 use bleeding_kansas::sim::nations::NationId;
 use bleeding_kansas::sim::psyche::{self, Condition};
@@ -106,6 +108,11 @@ enum Action {
     Sign(bool),
     Leave(Errand),
     Broker,
+    Do(Activity),
+    /// Activities aimed at the selected neighbor.
+    Visit,
+    Court,
+    Baptize,
 }
 
 fn main() {
@@ -403,10 +410,39 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                     (Action::Choose(Choice::Beg), "BEG", blue),
                     (Action::Tavern, "BE SEEN", blue),
                     (Action::Broker, "BROKER PEACE", blue),
-                    (Action::Leave(Errand::Fishing), "GO FISHING", green),
-                    (Action::Leave(Errand::Courting), "GO COURTING", green),
-                    (Action::Leave(Errand::Drinking), "GO DRINKING", brown),
                     (Action::Pause, "PAUSE", gray),
+                ],
+            );
+            button_row(
+                panel,
+                body,
+                &[
+                    (Action::Do(Activity::Chores), "CHORES", green),
+                    (Action::Do(Activity::Fish), "FISH", green),
+                    (Action::Do(Activity::Roam), "ROAM", green),
+                    (Action::Visit, "VISIT", blue),
+                    (Action::Court, "COURT", blue),
+                    (Action::Do(Activity::Drink), "DRINK", brown),
+                    (Action::Do(Activity::Preach), "PREACH", blue),
+                    (Action::Baptize, "BAPTIZE", blue),
+                    (
+                        Action::Do(Activity::Speech { calm: true }),
+                        "SPEAK: PEACE",
+                        blue,
+                    ),
+                    (
+                        Action::Do(Activity::Speech { calm: false }),
+                        "SPEAK: FIRE",
+                        red,
+                    ),
+                    (
+                        Action::Do(Activity::Build(Project::Schoolhouse)),
+                        "BUILD",
+                        green,
+                    ),
+                    (Action::Do(Activity::FileClaim), "FILE CLAIM", gray),
+                    (Action::Do(Activity::Study), "STUDY", gray),
+                    (Action::Leave(Errand::Buffalo), "LEAVE A WHILE", gray),
                 ],
             );
             button_row(
@@ -560,6 +596,24 @@ fn handle_actions(
             }
             (Action::Sign(yes), _) => w.player_answer_favor(yes),
             (Action::Leave(e), _) => w.player_leave(e),
+            (Action::Do(Activity::Build(_)), _) => {
+                // Whatever the county is building next.
+                if let Some(p) = Project::ALL.into_iter().find(|&p| !w.civic.built(p)) {
+                    w.player_do(Activity::Build(p));
+                }
+            }
+            (Action::Do(a), _) => {
+                w.player_do(a);
+            }
+            (Action::Visit, Some(t)) => {
+                w.player_do(Activity::Visit(t));
+            }
+            (Action::Court, Some(t)) => {
+                w.player_do(Activity::Court(t));
+            }
+            (Action::Baptize, Some(t)) => {
+                w.player_do(Activity::Baptize(t));
+            }
             (Action::Broker, Some(t)) => {
                 // Between the selected family and whoever it's feuding with.
                 let fam = w.npc(t).family;
@@ -812,6 +866,44 @@ fn household(world: &World) -> String {
     s
 }
 
+/// The Jones panel: spirits, goals, skills, and what the county calls you.
+fn your_life(world: &World) -> String {
+    let l = &world.life;
+    let mut s = format!("YOUR LIFE   spirits {}\n", bar(l.spirits, 100.0));
+    let goals: Vec<String> = life::goals(world)
+        .iter()
+        .map(|(name, v)| format!("{name} {:.0}%", v * 100.0))
+        .collect();
+    s.push_str(&goals.join("   "));
+    s.push('\n');
+    let mut skills: Vec<(f32, &str)> = Skill::ALL
+        .iter()
+        .map(|&k| (l.skill(k), k.label()))
+        .filter(|(v, _)| *v > 0.0)
+        .collect();
+    skills.sort_by(|a, b| b.0.total_cmp(&a.0));
+    if !skills.is_empty() {
+        let top: Vec<String> = skills
+            .iter()
+            .take(4)
+            .map(|(v, k)| format!("{k} {:.0}", v * 10.0))
+            .collect();
+        s.push_str(&top.join(", "));
+        s.push('\n');
+    }
+    let paths = life::paths(world);
+    if !paths.is_empty() {
+        s.push_str(&format!("They call you: {}\n", paths.join(", ")));
+    }
+    if let Some(e) = family::away(world) {
+        s.push_str(&format!("You are {}.\n", e.label()));
+    } else if l.acted_on == Some(world.day) {
+        s.push_str("Your day is spent.\n");
+    }
+    s.push_str("Click a neighbor to visit, court, or baptize.");
+    s
+}
+
 fn market_and_nations(world: &World) -> String {
     let m = &world.market;
     let mut s = String::from("DUNMORE'S, FRANKLIN\n");
@@ -913,7 +1005,7 @@ fn update_panels(
                 }
             ),
             Label::Inspect => match selection.0 {
-                None => "Click a neighbor on the map.".into(),
+                None => your_life(world),
                 Some(id) => inspect(world, id),
             },
             Label::Household => household(world),

@@ -45,6 +45,9 @@ Sim modules (`src/sim/`):
 | `ghosts` | oaths sworn over the dead, inherited oaths, children who come of age, shame when kin think the dead deserved it, restless spirits seen by moonlight |
 | `reconcile` | the better way: mercy at the moment of the act, barn raisings (a rival among the hands), apologies, condolence at a child's grave, enemy-of-my-enemy, feuds that starve, truces, the player's broker verb |
 | `family` | kin and absence: errands (buffalo, fishing, courting, town, drinking) take the player away; harm at home while away costs kin's regard |
+| `life` | the player's days: one activity a day (chores, fish, roam, visit, court, drink, preach, baptize, speech, build, file a claim, study), eight skills that grow by doing, spirits, Jones-style goals, emergent paths (preacher, souse, rake, silver tongue, vagabond, pillar...) |
+| `romance` | couples, courtship, seduction, affairs, scandal, marriages that make in-laws (and end feuds) |
+| `civic` | county projects (schoolhouse, bridge, lyceum), the Lecompton land office and claim jumpers, festivals |
 | `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |
 | `chronicle` | text for every event; cascade trees; lineage; "wars nobody started" |
@@ -66,6 +69,8 @@ cargo run --bin lab --no-default-features -- help
 cargo run --bin lab --no-default-features -- npc Pike --days 200
 cargo run --bin lab --no-default-features -- blame <event-id>
 cargo run --bin lab --no-default-features -- gate --seeds 30
+cargo run --bin lab --no-default-features -- life preacher --days 540
+cargo run --bin lab --no-default-features -- county --days 730
 cargo run --bin headless --no-default-features -- --seed 15 --truth
 cargo run --bin headless --no-default-features -- --survey 30 --days 730
 

@@ -41,6 +41,8 @@ pub enum Peace {
     Calamity,
     /// Someone talked them down.
     Brokered,
+    /// A wedding made them kin.
+    Marriage,
 }
 
 /// At the moment of the act: does the plotter go through with it?

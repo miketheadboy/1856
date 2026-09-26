@@ -39,6 +39,8 @@ Everything lives in `src/sim/` with no engine in it (§21). Module by module:
 | `bison` | The herd west of the county, the robe trade, the Kaw fall hunt, trips to the range. |
 | `ghosts` | Oaths over the dead that children inherit and wake to at sixteen; shame instead of vengeance when kin believe the dead had it coming; spirits seen under the moon. |
 | `reconcile` | Peace is usually sideways: a plotter who lowers the rifle, a rival at your barn raising, an enemy at a child's grave, a common enemy, exhaustion. Truces hold until new blood. The player can try to broker. |
+| `life` | One thing a day, Stardew by way of Jones in the Fast Lane: chores, the creek, the woods, porches, courting, the groggery, the pulpit, the river, the stump, the county's projects, the land office. Eight skills that grow by doing; spirits; goals; paths the county names you by. Every activity feeds something else: fish feed the house, visits carry rumors, baptisms soften revenge, speeches move grievance. |
+| `romance`, `civic` | Couples, courtship, affairs found out, weddings that end feuds. Neighbors raise a schoolhouse, a bridge, a lyceum; working beside a man softens a grudge. A pro-slavery land office "mislays" Free-State papers; claim jumpers, some of them next door. Christmas, New Year's calls, the Fourth, harvest home. |
 | `family`, `mortality` | Go fishing, courting or drinking and the county goes on without you; kin remember what you missed. Children sicken by season, frailty and hunger. |
 | `geography` | The county map: Kaw, Wakarusa, timber belts, roads, towns, claims. Terrain drives sightlines, fire and timber. |
 | `debug` | Daily metrics, event trace, and `explain_*` for people, blame and prices. |

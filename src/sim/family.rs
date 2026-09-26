@@ -55,7 +55,12 @@ impl Errand {
 }
 
 pub fn leave(world: &mut World, errand: Errand) {
-    let back = Day(world.day.0 + errand.days());
+    leave_for(world, errand, errand.days());
+}
+
+/// Gone for a set number of days (an afternoon's fishing is one).
+pub fn leave_for(world: &mut World, errand: Errand, days: u32) {
+    let back = Day(world.day.0 + days.max(1));
     world.player_away = Some((back, errand));
     world.npc_mut(PLAYER).alibi = Some(world.day);
 }

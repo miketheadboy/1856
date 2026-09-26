@@ -355,7 +355,12 @@ fn weekly(world: &mut World) {
     };
     let tension = (world.grievance[0] + world.grievance[1]) as f32;
     let blockade = if world.market.blockade { 0.25 } else { 1.0 };
-    let freight = world.market.freight_factor * roads * blockade;
+    let bridge = if world.civic.built(super::civic::Project::Bridge) {
+        1.2
+    } else {
+        1.0
+    };
+    let freight = world.market.freight_factor * roads * blockade * bridge;
     let emigrants = if (4..=6).contains(&month) { 1.0 } else { 0.0 };
     let glut = if (9..=10).contains(&month) {
         world.market.county_harvest

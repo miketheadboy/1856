@@ -15,6 +15,9 @@
 //!   evil                     cruelty and slander across seeds, and who got blamed
 //!   news                     every headline, both sides
 //!   bison                    the herd and robe prices over time
+//!   life <routine>           live a player's life on a routine (farmer, fisher,
+//!                            preacher, souse, rake, orator, builder, roamer)
+//!   county                   weddings, affairs, scandals, claims, projects across seeds
 //!   metrics <file.csv>       daily metrics for charts
 //!   trace <file.tsv>         every event with its cascade links
 //!   time                     how long a simulated year takes
@@ -92,6 +95,8 @@ fn main() {
         "evil" => evil(&o),
         "news" => news(&o),
         "bison" => bison(&o),
+        "life" => life_routine(&o),
+        "county" => county(&o),
         "metrics" => dump(&o, "metrics.csv", debug::metrics_csv),
         "trace" => dump(&o, "trace.tsv", debug::trace_tsv),
         "time" => time(&o),
@@ -491,4 +496,95 @@ fn time(o: &Opts) {
         t.as_secs_f64() * 1000.0 / o.days as f64,
         w.events.len()
     );
+}
+
+/// A player who does the same few things every week: what does that life
+/// become, and what does the county make of it?
+fn life_routine(o: &Opts) {
+    use bleeding_kansas::sim::civic::Project;
+    use bleeding_kansas::sim::life::{self, Activity, Skill};
+    use bleeding_kansas::sim::romance;
+    use bleeding_kansas::sim::world::PLAYER;
+    let routine = o.rest.first().map(String::as_str).unwrap_or("farmer");
+    let mut w = World::with_winter(o.seed, o.winter);
+    let neighbor = w.head_of(3).unwrap();
+    for d in 0..o.days {
+        let a = match (routine, d % 7) {
+            ("fisher", 1 | 4) | ("roamer", 1 | 3) => Activity::Fish,
+            ("roamer", _) => Activity::Roam,
+            ("preacher", 3) => Activity::Preach,
+            ("preacher", 5) => Activity::Baptize(w.head_of(1 + (d / 7) % 8).unwrap_or(neighbor)),
+            ("preacher", 1) => Activity::Visit(w.head_of(1 + (d / 7) % 8).unwrap_or(neighbor)),
+            ("preacher", _) => Activity::Study,
+            ("souse", _) => Activity::Drink,
+            ("rake", 1 | 3 | 5) => Activity::Court(neighbor),
+            ("orator", 2) => Activity::Speech { calm: true },
+            ("orator", _) => Activity::Visit(w.head_of(1 + (d % 8)).unwrap_or(neighbor)),
+            ("builder", 2 | 4) => Activity::Build(
+                Project::ALL
+                    .into_iter()
+                    .find(|&p| !w.civic.built(p))
+                    .unwrap_or(Project::Lyceum),
+            ),
+            ("builder", 5) => Activity::FileClaim,
+            _ => Activity::Chores,
+        };
+        w.player_do(a);
+        w.advance_day();
+        if w.day.is_first_of_month() {
+            let skills: Vec<String> = Skill::ALL
+                .iter()
+                .filter(|&&k| w.life.skill(k) > 0.05)
+                .map(|&k| format!("{} {:.2}", k.label(), w.life.skill(k)))
+                .collect();
+            let spouse = romance::married_to(&w, PLAYER).map(|s| w.opinion(s, PLAYER));
+            println!(
+                "{}  spirits {:>3.0}  rep {:>5.1}  spouse {:>4}  food {:>5.0}  ${:<4} [{}] {}",
+                w.day,
+                w.life.spirits,
+                bleeding_kansas::sim::psyche::reputation(&w, PLAYER),
+                spouse.map_or("-".into(), |o| o.to_string()),
+                w.families[0].stores.food,
+                w.families[0].stores.cash,
+                skills.join(", "),
+                life::paths(&w).join(", ")
+            );
+        }
+    }
+}
+
+fn county(o: &Opts) {
+    let mut t = [0usize; 7];
+    for seed in 1..=o.seeds {
+        let mut w = World::with_winter(seed, o.winter);
+        w.run_days(o.days);
+        for e in &w.events {
+            let i = match e.kind {
+                EventKind::Marriage { .. } => 0,
+                EventKind::Affair { .. } => 1,
+                EventKind::Scandal { .. } => 2,
+                EventKind::ClaimJumped { .. } => 3,
+                EventKind::ClaimFiled { delayed: true, .. } => 4,
+                EventKind::Built { .. } => 5,
+                EventKind::FeudEnded { .. } => 6,
+                _ => continue,
+            };
+            t[i] += 1;
+        }
+    }
+    let n = o.seeds as f32;
+    for (label, v) in [
+        "weddings",
+        "affairs",
+        "scandals",
+        "claims jumped",
+        "papers mislaid",
+        "projects built",
+        "feuds ended",
+    ]
+    .iter()
+    .zip(t)
+    {
+        println!("{label:<16} {:>5.1} per seed", v as f32 / n);
+    }
 }

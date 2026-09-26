@@ -444,6 +444,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 super::reconcile::Peace::CommonEnemy => "they hate someone else more",
                 super::reconcile::Peace::Calamity => "trouble did it",
                 super::reconcile::Peace::Brokered => "someone talked them down",
+                super::reconcile::Peace::Marriage => "a wedding made them kin",
             }
         ),
         EventKind::WhereWereYou { kin, errand, .. } => format!(
@@ -451,6 +452,110 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             capitalize(&who(world, kin)),
             errand.label()
         ),
+        EventKind::Pastime { what, amount } => {
+            use super::life::{Find, Pastime};
+            match what {
+                Pastime::Chores => "[HOME] You kept the place: hens, the cow, the garden".into(),
+                Pastime::Fished => match amount {
+                    0 => "[CREEK] Nothing biting on the Wakarusa".into(),
+                    n => format!("[CREEK] You took {n} catfish out of the Wakarusa"),
+                },
+                Pastime::Roamed(Find::Nothing) => {
+                    "[ROAM] You walked the timber and came home".into()
+                }
+                Pastime::Roamed(Find::BeeTree) => {
+                    "[ROAM] You found a bee tree and cut it out".into()
+                }
+                Pastime::Roamed(Find::Nuts) => {
+                    "[ROAM] Pecans and wild plums down by the creek".into()
+                }
+                Pastime::Roamed(Find::Neighbor(n)) => {
+                    format!("[ROAM] You fell in with {} on the road", who(world, n))
+                }
+                Pastime::Drank => "[GROGGERY] You drank at the Jack of Hearts".into(),
+                Pastime::Studied => "[STUDY] You sat up with the Book and the papers".into(),
+                Pastime::Visited(n) => format!("[VISIT] You sat a spell with {}", who(world, n)),
+                Pastime::Courted(n) => format!("[COURTING] You called on {}", who(world, n)),
+                Pastime::Built(p) => format!("[WORK] You gave a day to the {}", p.label()),
+            }
+        }
+        EventKind::Sermon { preacher, flock } => format!(
+            "[SERMON] {} preached to {} at the Sunday meeting",
+            capitalize(&who(world, preacher)),
+            flock
+        ),
+        EventKind::Baptism {
+            preacher,
+            convert,
+            cold,
+        } => format!(
+            "[BAPTISM] {} put {} under in the Wakarusa{}",
+            capitalize(&who(world, preacher)),
+            who(world, convert),
+            if cold { ", through the ice" } else { "" }
+        ),
+        EventKind::Speech {
+            speaker,
+            calm,
+            heard,
+        } => format!(
+            "[SPEECH] {} spoke to {} in Lawrence, {}",
+            capitalize(&who(world, speaker)),
+            heard,
+            if calm {
+                "for patience"
+            } else {
+                "and the room caught fire"
+            }
+        ),
+        EventKind::Affair { a, b } => format!(
+            "[SECRET] {} and {} are carrying on",
+            capitalize(&who(world, a)),
+            who(world, b)
+        ),
+        EventKind::Scandal { a, b, wronged } => format!(
+            "[SCANDAL] {} and {} were seen together. {} knows",
+            capitalize(&who(world, a)),
+            who(world, b),
+            capitalize(&who(world, wronged))
+        ),
+        EventKind::Marriage { a, b } => format!(
+            "[WEDDING] {} and {} were married",
+            capitalize(&who(world, a)),
+            who(world, b)
+        ),
+        EventKind::Built { project } => {
+            format!(
+                "[COUNTY] The {} is finished, raised by neighbors",
+                project.label()
+            )
+        }
+        EventKind::ClaimFiled { family, delayed } => format!(
+            "[LAND OFFICE] The {} claim {} at Lecompton",
+            world.families[family as usize].surname,
+            if delayed {
+                "papers were \"mislaid\""
+            } else {
+                "was filed"
+            }
+        ),
+        EventKind::ClaimJumped {
+            family,
+            lost,
+            neighbor,
+        } => format!(
+            "[CLAIM] {} jumped the {} claim{}",
+            neighbor.map_or("A stranger".to_string(), |n| capitalize(&who(world, n))),
+            world.families[family as usize].surname,
+            if lost == 0 {
+                " and was run off".to_string()
+            } else {
+                format!(", taking {lost} acres")
+            }
+        ),
+        EventKind::Festival { holiday, crowd } => {
+            format!("[{}] {} turned out", holiday.label().to_uppercase(), crowd)
+        }
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),
@@ -588,6 +693,7 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
     match ev.kind {
         EventKind::Gossip { .. } | EventKind::Grief { .. } => false,
         EventKind::Retaliation { .. } | EventKind::Spared { .. } => omniscient,
+        EventKind::Affair { a, b } => omniscient || a == PLAYER || b == PLAYER,
         EventKind::Blackmail { paid: true, .. } => omniscient,
         EventKind::Cruelty {
             act: Cruelty::Slander { .. },

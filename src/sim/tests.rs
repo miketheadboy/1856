@@ -227,7 +227,9 @@ fn cornering_corn_spikes_the_price_and_breeds_resentment() {
 }
 
 /// Phase 2 gate (§24): does a bad winter change the political map six months later?
-/// Politics here: thefts, storekeeper favors, and accusations by August 1856.
+/// Politics here: thefts, storekeeper favors, and accusations over thefts by
+/// August 1856. Accusations over fires are left out: they are dominated by
+/// whichever feud cascades a seed happens to roll, not by the winter.
 #[test]
 fn a_harsh_winter_sours_the_summer() {
     use super::events::Suspect;
@@ -243,8 +245,13 @@ fn a_harsh_winter_sours_the_summer() {
                         EventKind::Belief {
                             blamed: Suspect::Person(_),
                             confidence,
+                            about,
                             ..
-                        } if confidence >= 20 => 1,
+                        } if confidence >= 20
+                            && matches!(w.events[about as usize].kind, EventKind::Theft { .. }) =>
+                        {
+                            1
+                        }
                         _ => 0,
                     })
                     .sum::<usize>()
