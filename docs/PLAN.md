@@ -8,9 +8,9 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 - 30+ sim modules, 123 tests, clippy/fmt clean, two simulated years in ~25 ms.
 - Balance (50 seeds, two years): a war nobody started in ~18/50, ~1 violent
   death per seed-year, harsh winters measurably worse (Phase 2 gate).
-- The Bevy view: survey-plat map with woodcut sprites, seasons, weather,
-  smoke, night by the moon, a broadsheet log. The verb list is still a
-  panel of buttons — that's the next big job.
+- The Bevy view: three scales (county map, your claim on foot, town
+  streets), command windows on things, letterboxed scenes, a status screen
+  and the paper. Next: Phase B, action.
 
 ## Everything asked for, and where it went
 
@@ -35,7 +35,7 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 | farm calendar, trapping, night camp, post office, court, voting, muster, bees, church split, kids inherit paths, press about you, scandal cuts credit, real estate + Panic, births | done | see module table in CLAUDE.md |
 | seasons, weather, smoke, night, woodcut sprites, broadsheet, more Dylan | done | `scenery.rs`, `tools/woodcut.py` |
 | constructive/destructive environment | first pass done | `homestead`, `geography` (stumps, scorch) |
-| clean UI; closer and wider views; situational styles like FF7; kill the button wall | **next** | **Phase A** |
+| clean UI; closer and wider views; situational styles like FF7; kill the button wall | done (Phase A) | `county.rs`, `claim.rs`, `town.rs`, `walk.rs`, `scene.rs`, `ui.rs` |
 | action and violence, and how to avoid it; shows of force; stealth; assassinations; minigames | **next** | **Phase B** |
 | stockpiles, weapons, ammo, materials, crafting | planned | **Phase C** |
 | assign tasks to family/faction/hired hands; mercenaries; bounty hunters (be one or run from one) | planned | **Phase D** |
@@ -44,7 +44,12 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 | a portion of Crusader Kings 3: schemes, dynasty, traits and stress, emergent narrative | planned | **Phase F** |
 | folklore: omens, will-o'-wisps, spiritualism, wakes | planned | **Phase G** |
 
-## Phase A — the view, rebuilt (FF7-style scales and scenes)
+## Phase A — the view, rebuilt (FF7-style scales and scenes) — DONE
+
+Shipped: county/claim/town screens, walking and spots, blue command
+windows, scenes, top bar, Tab status, N paper, night on foot. Left for
+later: collisions, tweened transitions between screens, a sprite for each
+kin by name, lamps in town windows.
 
 Goal: the player lives in places, not in a button panel.
 

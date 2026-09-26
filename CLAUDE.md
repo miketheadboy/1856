@@ -18,7 +18,15 @@ enough to be believed. The player can be right, still be blamed, and still lose.
 
 ```
 src/sim/         the simulation. No engine dependency, ever (§21).
-src/main.rs      Bevy view: draws the sim, forwards player verbs. No rules here.
+src/main.rs      Bevy view: app wiring, screens (County, Claim, Town). No rules here.
+  county.rs      the wide map: zoom/pan, click a neighbor, your claim or a town
+  claim.rs       your homestead on foot, drawn from sim state
+  town.rs        Lawrence, Franklin, Lecompton streets; who's in town today
+  walk.rs        walking, spots, and what each spot offers today
+  cmds.rs        commands -> sim verbs; submenus (neighbor, after dark, store...)
+  scene.rs       letterboxed moments: the knock, the petition, the muster...
+  ui.rs          blue command windows, toast, top bar, status (Tab), paper (N)
+  panels.rs      text readouts; scenery.rs map art, seasons, weather, night
 src/bin/lab.rs   the lab: run one system at a time and look inside it
 src/bin/headless.rs  chronicle runner and seed survey
 benches/sim.rs   criterion benches
@@ -85,6 +93,7 @@ cargo run --bin headless --no-default-features -- --survey 30 --days 730
 
 cargo run                                         # the game (needs a display)
 BK_SEED=15 BK_START_DAYS=200 BK_DAY_SECONDS=2 cargo run
+BK_SCREEN=lawrence cargo run                      # start in county|claim|lawrence|franklin|lecompton
 ```
 
 Linux containers need `libwayland-dev libxkbcommon-dev libasound2-dev
@@ -131,8 +140,9 @@ trips the Westport blockade early); fires run ~25 per two years.
   narration of what the code obviously does.
 - Chronicle text is period-plain and short. The default Bevy font lacks some
   glyphs; the view runs text through `plain()`.
-- The view shows only the verbs that apply today (`available` in main.rs):
-  the ballot on election day, the door when someone's knocking.
+- No button walls. Verbs live on things: walk up to the barn, the creek, a
+  door in town, a neighbor, and press E. Command windows grey out what
+  can't be done today. Moments that won't wait are scenes (`scene.rs`).
 - Visual style: survey plat on charcoal, bone type, live greens and river
   blue, oxblood and brass accents. Woodcut sprites (`tools/woodcut.py`
   writes `assets/sprites/`); seasons on the grass, weather and smoke over the

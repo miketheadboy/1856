@@ -216,6 +216,175 @@ def puff():
     img.save(os.path.join(OUT, "puff.png"))
 
 
+def tree():
+    img = canvas(20, 28)
+    d = ImageDraw.Draw(img)
+    poly(d, [(9, 18), (11, 18), (11.5, 28), (8.5, 28)], fill=INK)
+    crown = [(10, 1), (17, 7), (19, 13), (15, 19), (5, 19), (1, 13), (3, 7)]
+    poly(d, crown)
+    hatch(img, crown, spacing=1.4, angle=35, width=0.45)
+    save(img, "tree", (40, 56))
+
+
+def stump():
+    img = canvas(12, 8)
+    d = ImageDraw.Draw(img)
+    poly(d, [(2, 3), (10, 3), (11, 8), (1, 8)])
+    d.ellipse(pts([(2, 1), (10, 5)]), fill=PAPER, outline=INK, width=int(0.8 * S))
+    line(d, (6, 2), (6, 4), 0.5)
+    save(img, "stump", (24, 16))
+
+
+def well():
+    img = canvas(14, 16)
+    d = ImageDraw.Draw(img)
+    poly(d, [(2, 9), (12, 9), (12, 15), (2, 15)])
+    hatch(img, [(2, 9), (12, 9), (12, 15), (2, 15)], spacing=1.6, angle=0, width=0.4)
+    d = ImageDraw.Draw(img)
+    line(d, (3, 9), (3, 3), 1.0)
+    line(d, (11, 9), (11, 3), 1.0)
+    poly(d, [(1, 4), (7, 0), (13, 4)])
+    line(d, (7, 4), (7, 8), 0.5)
+    save(img, "well", (28, 32))
+
+
+def shed(name, stripes):
+    img = canvas(16, 16)
+    d = ImageDraw.Draw(img)
+    body = [(2, 6), (14, 6), (14, 15), (2, 15)]
+    poly(d, body)
+    if stripes:
+        for x in range(4, 14, 2):
+            line(d, (x, 6), (x, 15), 0.5)
+    roof = [(1, 7), (8, 1), (15, 7)]
+    poly(d, roof)
+    hatch(img, roof, spacing=1.4, angle=60)
+    d = ImageDraw.Draw(img)
+    poly(d, [(6, 10), (10, 10), (10, 15), (6, 15)], fill=INK)
+    save(img, name, (32, 32))
+
+
+def cellar():
+    img = canvas(16, 10)
+    d = ImageDraw.Draw(img)
+    mound = [(0, 10)] + [(8 + 8 * math.cos(math.radians(a)), 10 - 7 * math.sin(math.radians(a))) for a in range(0, 181, 15)][::-1] + [(16, 10)]
+    poly(d, mound)
+    hatch(img, mound, spacing=1.2, angle=10, width=0.4)
+    d = ImageDraw.Draw(img)
+    poly(d, [(6, 5), (10, 5), (10, 10), (6, 10)], fill=INK)
+    save(img, "cellar", (32, 20))
+
+
+def rail():
+    img = canvas(24, 8)
+    d = ImageDraw.Draw(img)
+    for i, x in enumerate(range(0, 24, 6)):
+        y = 1 if i % 2 == 0 else 3
+        line(d, (x, y + 4), (x + 7, y), 1.0)
+        line(d, (x, y), (x + 7, y + 4), 1.0)
+    save(img, "rail", (48, 16))
+
+
+def corn(name, height, tassel):
+    img = canvas(8, 16)
+    d = ImageDraw.Draw(img)
+    base = 16
+    line(d, (4, base), (4, base - height), 0.9)
+    for k in range(2, height, 3):
+        line(d, (4, base - k), (1 if k % 2 else 7, base - k - 2), 0.6)
+    if tassel:
+        line(d, (4, base - height), (3, base - height - 2), 0.6)
+        line(d, (4, base - height), (5, base - height - 2), 0.6)
+    save(img, name, (16, 32))
+
+
+def shock():
+    img = canvas(10, 14)
+    d = ImageDraw.Draw(img)
+    sh = [(5, 0), (9, 14), (1, 14)]
+    poly(d, sh)
+    hatch(img, sh, spacing=1.0, angle=85, width=0.4)
+    save(img, "shock", (20, 28))
+
+
+def facade(name, stories, false_front, awning):
+    w, h = 28, 12 + 9 * stories
+    img = canvas(w, h)
+    d = ImageDraw.Draw(img)
+    top = 2 if false_front else 6
+    body = [(1, top), (27, top), (27, h - 1), (1, h - 1)]
+    poly(d, body)
+    for y in range(top + 3, h - 1, 3):
+        line(d, (1, y), (27, y), 0.35)
+    if not false_front:
+        roof = [(0, 7), (14, 0), (28, 7)]
+        poly(d, roof)
+        hatch(img, roof, spacing=1.4, angle=60)
+        d = ImageDraw.Draw(img)
+    for st in range(stories):
+        y = top + 4 + 9 * st
+        for x in (4, 11, 18, 23):
+            poly(d, [(x, y), (x + 3, y), (x + 3, y + 4), (x, y + 4)], fill=INK)
+    poly(d, [(12, h - 8), (16, h - 8), (16, h - 1), (12, h - 1)], fill=INK)
+    if awning:
+        aw = [(0, h - 10), (28, h - 10), (26, h - 8), (2, h - 8)]
+        poly(d, aw)
+        hatch(img, aw, spacing=1.0, angle=90, width=0.4)
+    save(img, name, (w * 3, h * 3))
+
+
+def sign():
+    img = canvas(12, 16)
+    d = ImageDraw.Draw(img)
+    line(d, (6, 4), (6, 16), 1.2)
+    poly(d, [(0, 2), (11, 2), (12, 4.5), (11, 7), (0, 7)])
+    save(img, "sign", (24, 32))
+
+
+def letter():
+    img = canvas(30, 20)
+    d = ImageDraw.Draw(img)
+    env = [(1, 1), (29, 1), (29, 19), (1, 19)]
+    poly(d, env)
+    line(d, (1, 1), (15, 11), 1.0)
+    line(d, (29, 1), (15, 11), 1.0)
+    d.ellipse(pts([(13, 9), (17, 13)]), fill=INK)
+    save(img, "letter", (120, 80))
+
+
+def cross():
+    img = canvas(16, 24)
+    d = ImageDraw.Draw(img)
+    poly(d, [(7, 1), (9, 1), (9, 22), (7, 22)])
+    poly(d, [(3, 6), (13, 6), (13, 8), (3, 8)])
+    mound = [(0, 24), (4, 21), (12, 21), (16, 24)]
+    poly(d, mound)
+    hatch(img, mound, spacing=1.0, angle=20, width=0.4)
+    save(img, "cross", (64, 96))
+
+
+def rifles():
+    img = canvas(28, 24)
+    d = ImageDraw.Draw(img)
+    for a in (-0.35, 0.0, 0.35):
+        x0 = 14 + 10 * math.sin(a)
+        line(d, (14 - 6 * math.sin(a), 23), (x0, 1), 1.4)
+        line(d, (14 - 6 * math.sin(a), 23), (14 - 6 * math.sin(a) + 2, 18), 2.4)
+    save(img, "rifles", (112, 96))
+
+
+def ballot():
+    img = canvas(24, 20)
+    d = ImageDraw.Draw(img)
+    box = [(2, 6), (22, 6), (22, 19), (2, 19)]
+    poly(d, box)
+    hatch(img, box, spacing=1.6, angle=90, width=0.4)
+    d = ImageDraw.Draw(img)
+    poly(d, [(8, 5), (16, 5), (16, 7), (8, 7)], fill=INK)
+    poly(d, [(9, 0), (15, 0), (15, 6), (9, 6)])
+    save(img, "ballot", (96, 80))
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     cabin()
@@ -231,4 +400,23 @@ if __name__ == "__main__":
     figure("child", small=True)
     lamp()
     puff()
+    tree()
+    stump()
+    well()
+    shed("smokehouse", False)
+    shed("crib", True)
+    cellar()
+    rail()
+    corn("sprout", 5, False)
+    corn("corn", 13, True)
+    shock()
+    facade("store", 1, True, True)
+    facade("saloon", 1, True, False)
+    facade("hotel", 3, False, True)
+    facade("office", 1, False, False)
+    sign()
+    letter()
+    cross()
+    rifles()
+    ballot()
     print("wrote", sorted(os.listdir(OUT)))
