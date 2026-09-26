@@ -5,11 +5,15 @@
 //! force as if it were true.
 
 use super::calendar::Season;
+use super::events::Cruelty;
 use super::events::{EventId, EventKind, Suspect};
+use super::psyche::LifeStage;
 use super::world::{NpcId, World, distance};
 
 /// Softmax temperature. Lower = people are more certain of their prejudices.
-const TEMPERATURE: f32 = 7.0;
+/// Skeptics run hotter: less sure of anyone.
+const TEMPERATURE: f32 = 6.0;
+const SKEPTIC_TEMPERATURE: f32 = 8.0;
 
 #[derive(Clone, Debug)]
 pub struct Candidate {
@@ -38,6 +42,13 @@ pub fn victim_of(world: &World, event: EventId) -> Option<NpcId> {
     match world.events[event as usize].kind {
         EventKind::Fire { owner, .. } => Some(owner),
         EventKind::Death { victim, .. } => Some(victim),
+        EventKind::Theft { victim, .. } => Some(victim),
+        EventKind::Wounded { victim, .. } => Some(victim),
+        EventKind::Cruelty {
+            victim,
+            act: Cruelty::KillStock | Cruelty::FoulWell,
+            ..
+        } => Some(victim),
         _ => None,
     }
 }
@@ -53,9 +64,9 @@ pub fn candidates(
         return Vec::new();
     };
     let is_fire = matches!(ev.kind, EventKind::Fire { .. });
+    let is_theft = matches!(ev.kind, EventKind::Theft { .. });
     let site = world.farm_of(victim);
     let victim_family = world.npc(victim).family;
-    let victim_faction = world.npc(victim).faction;
     let observer_family = world.npc(observer).family;
     let rumor_for = |s: Suspect| match rumor {
         Some(r) if r.suspect == s => r.strength,
@@ -89,21 +100,64 @@ pub fn candidates(
         });
     }
 
+    match ev.kind {
+        EventKind::Cruelty {
+            act: Cruelty::KillStock,
+            ..
+        } => out.push(Candidate {
+            suspect: Suspect::Nature,
+            score: 25.0 + rumor_for(Suspect::Nature),
+            reason: "wolves got it",
+        }),
+        EventKind::Cruelty {
+            act: Cruelty::FoulWell,
+            ..
+        } => out.push(Candidate {
+            suspect: Suspect::Accident,
+            score: 25.0 + rumor_for(Suspect::Accident),
+            reason: "bad water in a wet spring",
+        }),
+        _ => {}
+    }
+
+    if is_theft {
+        // Cows wander. Sometimes that's all it was.
+        out.push(Candidate {
+            suspect: Suspect::Accident,
+            score: 20.0 + rumor_for(Suspect::Accident),
+            reason: "it strayed off",
+        });
+    }
+
     for person in world.living() {
         let p = person.id;
-        if p == observer || p == victim || person.family == observer_family {
+        if p == observer
+            || p == victim
+            || person.family == observer_family
+            || LifeStage::of(person.age) == LifeStage::Child
+        {
             continue;
         }
 
         let hostility = (-world.opinion(observer, p)).max(0) as f32 * 0.9;
         let proximity = 20.0 * (1.0 - distance(world.farm_of(p), site) / 15.0).max(0.0);
         let mut motive = 0.0;
-        if person.faction != victim_faction {
-            motive += 15.0;
-        }
+        // "Their side does this": judged by what people say out loud.
+        let gap = (person.ideology.public - world.npc(victim).ideology.public).abs();
+        motive += 10.0 * gap;
         if world.feud_between(person.family, victim_family) {
             motive += 20.0;
         }
+        // Poverty makes you a suspect (§10): everyone knows who's been begging.
+        let hunger = if is_theft
+            && world.families[person.family as usize]
+                .stores
+                .visibly_hungry(ev.day)
+        {
+            30.0
+        } else {
+            0.0
+        };
         let capability = 5.0;
         let priors = world
             .npc(observer)
@@ -121,7 +175,8 @@ pub fn candidates(
         let rumor_boost = rumor_for(Suspect::Person(p));
 
         let score =
-            -25.0 + hostility + proximity + motive + capability + pattern + rumor_boost - alibi;
+            -25.0 + hostility + proximity + motive + hunger + capability + pattern + rumor_boost
+                - alibi;
 
         let reasons = [
             (hostility, "bad blood between them"),
@@ -129,6 +184,7 @@ pub fn candidates(
             (motive, "their side does this"),
             (pattern, "has done it before"),
             (rumor_boost, "everybody says so"),
+            (hunger, "their family is starving"),
         ];
         let reason = reasons
             .iter()
@@ -148,13 +204,17 @@ pub fn candidates(
 
 /// Softmax over scores, returned in the same order as `candidates`.
 pub fn beliefs(candidates: &[Candidate]) -> Vec<f32> {
+    beliefs_at(candidates, TEMPERATURE)
+}
+
+pub fn beliefs_at(candidates: &[Candidate], temperature: f32) -> Vec<f32> {
     let max = candidates
         .iter()
         .map(|c| c.score)
         .fold(f32::NEG_INFINITY, f32::max);
     let exps: Vec<f32> = candidates
         .iter()
-        .map(|c| ((c.score - max) / TEMPERATURE).exp())
+        .map(|c| ((c.score - max) / temperature).exp())
         .collect();
     let total: f32 = exps.iter().sum();
     exps.into_iter().map(|e| e / total).collect()
@@ -170,7 +230,9 @@ pub fn judge(world: &mut World, observer: NpcId, event: EventId, rumor: Option<R
             reason: "no idea",
         };
     }
-    let probs = beliefs(&cands);
+    let temperature =
+        TEMPERATURE + SKEPTIC_TEMPERATURE * world.npc(observer).temperament.skepticism;
+    let probs = beliefs_at(&cands, temperature);
     let roll = world.rng.unit();
     let mut acc = 0.0;
     let mut chosen = cands.len() - 1;

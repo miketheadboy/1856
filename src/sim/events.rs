@@ -62,6 +62,46 @@ pub enum Retaliation {
     Ambush,
 }
 
+/// What a household gave up, or who it turned to, when the food ran out (§10).
+/// Every option spends the future to buy the present.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Desperate {
+    /// Ate the corn they were holding back to plant.
+    EatSeed { bushels: u32 },
+    /// Butchered breeding stock. The herd takes years to rebuild.
+    Slaughter,
+    /// Butchered a plow ox. Without oxen, no new sod gets broken.
+    SlaughterOx,
+    /// Bought food on credit at the store.
+    Borrow { lender: NpcId, dollars: i32 },
+    /// Asked a neighbor for food.
+    Beg { neighbor: NpcId, granted: bool },
+}
+
+/// Harm done for its own sake (see `character`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cruelty {
+    /// Tell `listener` that the victim caused `about`. A lie.
+    Slander { listener: NpcId, about: EventId },
+    /// Shoot a neighbor's cow and leave it.
+    KillStock,
+    /// Throw a carcass in the well. Everyone who drinks sickens.
+    FoulWell,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hardship {
+    Hunger,
+    Cold,
+    Fever,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Loot {
+    Cow,
+    Grain,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum EventKind {
     Fire {
@@ -107,6 +147,48 @@ pub enum EventKind {
     FeudDeclared {
         a: FamilyId,
         b: FamilyId,
+    },
+    /// Died of the substrate, not of a person: hunger, cold, or fever.
+    Perished {
+        victim: NpcId,
+        cause: Hardship,
+    },
+    Desperation {
+        family: FamilyId,
+        act: Desperate,
+    },
+    /// Hunger's crime. Victims attribute it like any other harm (§11).
+    Theft {
+        thief: NpcId,
+        victim: NpcId,
+        loot: Loot,
+    },
+    Cruelty {
+        actor: NpcId,
+        victim: NpcId,
+        act: Cruelty,
+    },
+    /// Shot and survived.
+    Wounded {
+        victim: NpcId,
+        attacker: NpcId,
+    },
+    Harvest {
+        family: FamilyId,
+        planted: u32,
+        food: u32,
+    },
+    /// The storekeeper calls in a debt as a political favor (§10.2).
+    Favor {
+        creditor: NpcId,
+        debtor: NpcId,
+        complied: bool,
+    },
+    /// A big move in a price at the store.
+    PriceMove {
+        good: super::market::Good,
+        cents: u32,
+        rising: bool,
     },
     /// Someone decided to act on a belief. Resolved by the retaliation system.
     Retaliation {

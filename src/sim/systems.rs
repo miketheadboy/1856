@@ -2,7 +2,11 @@
 //! None of them call each other (§15.2). Adding a consequence = adding a system.
 
 use super::attribution::{self, Rumor};
+use super::character::{self, Archetype};
+use super::economy;
+use super::events::Cruelty;
 use super::events::{EventKind, FireCause, Retaliation, Source, Suspect, WorldEvent};
+use super::psyche::{self, LifeStage};
 use super::world::{Faction, MemoryRef, NpcId, PLAYER, World, distance};
 
 /// Grievance at which a faction starts sanctioning revenge.
@@ -25,6 +29,9 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     faction_system(world, ev);
     opinion_system(world, ev);
     retaliation_system(world, ev);
+    favor_system(world, ev);
+    cruelty_system(world, ev);
+    wound_system(world, ev);
 }
 
 fn is_stakeholder(world: &World, holder: NpcId, victim: NpcId) -> bool {
@@ -46,7 +53,8 @@ fn fire_system(world: &mut World, ev: &WorldEvent) {
         .iter_mut()
         .filter(|n| n.family == family && n.alive)
     {
-        n.mood -= 15;
+        n.emotions.fear += 15.0;
+        n.emotions.anger += 10.0;
     }
 
     // Fire doesn't stop at property lines. Dry + windy is apocalyptic.
@@ -77,7 +85,7 @@ fn fire_system(world: &mut World, ev: &WorldEvent) {
 }
 
 fn death_system(world: &mut World, ev: &WorldEvent) {
-    let EventKind::Death { victim, .. } = ev.kind else {
+    let (EventKind::Death { victim, .. } | EventKind::Perished { victim, .. }) = ev.kind else {
         return;
     };
     world.npc_mut(victim).alive = false;
@@ -101,7 +109,7 @@ fn death_system(world: &mut World, ev: &WorldEvent) {
 
 fn grief_system(world: &mut World, ev: &WorldEvent) {
     if let EventKind::Grief { mourner, .. } = ev.kind {
-        world.npc_mut(mourner).mood -= 35;
+        psyche::feel(world, mourner, |e| e.grief += 60.0);
     }
 }
 
@@ -117,6 +125,14 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
             false,
         ),
         EventKind::Death { victim, killer } => (victim, killer, true),
+        EventKind::Theft { thief, victim, .. } => (victim, Some(thief), false),
+        EventKind::Cruelty {
+            actor,
+            victim,
+            act: Cruelty::KillStock | Cruelty::FoulWell,
+        } => (victim, Some(actor), false),
+        // You mostly see who shot you.
+        EventKind::Wounded { victim, attacker } => (victim, Some(attacker), true),
         _ => return,
     };
     let site = world.farm_of(victim);
@@ -150,7 +166,21 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
             (true, true) => 0.25,
             (true, false) => 0.12,
         };
-        let saw = actor.filter(|_| world.rng.chance(sight));
+        // Stealth hides you; alertness catches you. Bushwhackers are ghosts.
+        let hidden = actor.map_or(1.0, |a| {
+            let n = world.npc(a);
+            let ghost = if character::is(n, Archetype::Bushwhacker) {
+                0.4
+            } else {
+                1.0
+            };
+            (1.0 - 0.6 * n.body.stealth) * ghost
+        });
+        let keen = 0.6 + 0.8 * world.npc(observer).body.alertness;
+        let saw = actor.filter(|_| world.rng.chance(sight * hidden * keen));
+        if !stakeholder {
+            psyche::feel(world, observer, |e| e.fear += 10.0);
+        }
         let belief = match saw {
             Some(culprit) => EventKind::Belief {
                 holder: observer,
@@ -192,15 +222,26 @@ fn gossip_system(world: &mut World, ev: &WorldEvent) {
     else {
         return;
     };
-    if !world.npc(listener).alive || world.npc(listener).memory_of(about).is_some() {
+    if !world.npc(listener).alive {
         return;
     }
+    // Someone who already has a view only changes it for a rumor that beats it.
+    let prior = world
+        .npc(listener)
+        .memory_of(about)
+        .map(|m| (m.believed, m.confidence));
     let trust = (world.opinion(listener, teller) as f32 + 100.0) / 200.0;
+    let doubt = 1.0 - 0.5 * world.npc(listener).temperament.skepticism;
     let rumor = Rumor {
         suspect: blamed,
-        strength: 45.0 * trust,
+        strength: 45.0 * trust * doubt * character::rumor_weight(world, teller),
     };
     let v = attribution::judge(world, listener, about, Some(rumor));
+    if let Some((believed, confidence)) = prior
+        && (v.blamed == believed || v.confidence <= confidence)
+    {
+        return;
+    }
     world.emit_child(
         ev,
         EventKind::Belief {
@@ -230,7 +271,11 @@ fn belief_system(world: &mut World, ev: &WorldEvent) {
     let Some(victim) = attribution::victim_of(world, about) else {
         return;
     };
-    let is_death = matches!(world.events[about as usize].kind, EventKind::Death { .. });
+    let about_kind = &world.events[about as usize].kind;
+    let is_death = matches!(about_kind, EventKind::Death { .. });
+    let is_theft = matches!(about_kind, EventKind::Theft { .. });
+    let is_wound = matches!(about_kind, EventKind::Wounded { .. });
+    let is_cruelty = matches!(about_kind, EventKind::Cruelty { .. });
     let stake = if is_stakeholder(world, holder, victim) {
         1.0
     } else {
@@ -255,8 +300,20 @@ fn belief_system(world: &mut World, ev: &WorldEvent) {
         && target != holder
         && confidence >= ACCUSATION_CONFIDENCE
     {
-        let severity = if is_death { 90.0 } else { 45.0 };
+        let severity = if is_death {
+            90.0
+        } else if is_wound {
+            70.0
+        } else if is_cruelty {
+            35.0
+        } else if is_theft {
+            30.0
+        } else {
+            45.0
+        };
         let delta = -(severity * stake * confidence as f32 / 100.0) as i16;
+        let heat = severity * stake * confidence as f32 / 200.0;
+        psyche::feel(world, holder, |e| e.anger += heat);
         if delta <= -3 {
             world.emit_child(
                 ev,
@@ -289,10 +346,15 @@ fn faction_system(world: &mut World, ev: &WorldEvent) {
     if !is_stakeholder(world, holder, victim) || world.npc(blamed).faction == faction {
         return;
     }
-    let bump = match world.events[about as usize].kind {
-        EventKind::Death { .. } => 25,
-        _ => 12,
+    let base = match world.events[about as usize].kind {
+        EventKind::Death { .. } => 25.0,
+        EventKind::Wounded { .. } => 15.0,
+        EventKind::Cruelty { .. } => 8.0,
+        EventKind::Theft { .. } => 6.0,
+        _ => 12.0,
     };
+    // The loyal take their side's wounds personally.
+    let bump = (base * (0.5 + world.npc(holder).temperament.loyalty)) as i32;
     let before = world.grievance[faction.index()];
     let after = before + bump;
     world.grievance[faction.index()] = after;
@@ -300,6 +362,14 @@ fn faction_system(world: &mut World, ev: &WorldEvent) {
         .iter()
         .any(|t| before < *t && after >= *t);
     if crossed {
+        let members: Vec<NpcId> = world
+            .living()
+            .filter(|n| n.faction == faction)
+            .map(|n| n.id)
+            .collect();
+        for m in members {
+            psyche::feel(world, m, |e| e.zeal += 12.0);
+        }
         world.emit_child(
             ev,
             EventKind::FactionGrievance {
@@ -347,17 +417,33 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
     let cooling = h
         .last_revenge
         .is_some_and(|d| ev.day.0 < d.0 + REVENGE_COOLDOWN);
-    if holder == PLAYER || !h.alive || h.plotting.is_some() || cooling || !world.npc(target).alive {
+    // Children don't ride at night, and the sick can't.
+    let able = LifeStage::of(h.age) != LifeStage::Child && h.health >= 30;
+    if holder == PLAYER
+        || !h.alive
+        || !able
+        || h.plotting.is_some()
+        || cooling
+        || !world.npc(target).alive
+    {
         return;
     }
     let mut p = 0.2 + 0.08 * h.violence.min(4) as f32;
     if faction_authorized(world, h.faction) {
         p += 0.2;
     }
-    if h.mood < 30 {
-        p += 0.1;
+    p += psyche::revenge_drive(world, holder);
+    // A gunshot wound or a bad winter radicalizes by the economic path.
+    if world.families[h.family as usize].stores.desperate() {
+        p += 0.15;
     }
-    if !world.rng.chance(p.min(0.7)) {
+    let h = world.npc(holder);
+    let zealot = character::is(h, Archetype::Zealot);
+    let hothead = character::is(h, Archetype::Hothead);
+    if zealot {
+        p *= 1.5;
+    }
+    if !world.rng.chance(p.clamp(0.02, 0.85)) {
         return;
     }
     let grieving = world
@@ -365,13 +451,16 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
         .memories
         .iter()
         .any(|m| m.weight == 255 && m.believed == Suspect::Person(target));
-    let method = if grieving || (world.feud_between(hf, tf) && world.rng.chance(0.3)) {
+    let method = if grieving || hothead || (world.feud_between(hf, tf) && world.rng.chance(0.3)) {
         Retaliation::Ambush
     } else {
         Retaliation::Arson
     };
     world.npc_mut(holder).plotting = Some(target);
-    let delay = world.rng.range(3, 25);
+    let mut delay = world.rng.range(3, 25);
+    if hothead {
+        delay /= 2;
+    }
     world.schedule(
         delay,
         EventKind::Retaliation {
@@ -425,12 +514,130 @@ fn retaliation_system(world: &mut World, ev: &WorldEvent) {
             cause: FireCause::Arson(actor),
             spread_from: None,
         },
-        Retaliation::Ambush => EventKind::Death {
-            victim: target,
-            killer: Some(actor),
-        },
+        Retaliation::Ambush => {
+            // Marksmanship and luck against the target's alertness.
+            let (a, t) = (world.npc(actor), world.npc(target));
+            let kill = if character::is(a, Archetype::Bushwhacker) {
+                1.0
+            } else {
+                (0.35 + 0.55 * a.body.marksmanship - 0.25 * t.body.alertness) * a.hidden.luck
+            };
+            if world.rng.chance(kill.clamp(0.1, 1.0)) {
+                EventKind::Death {
+                    victim: target,
+                    killer: Some(actor),
+                }
+            } else {
+                EventKind::Wounded {
+                    victim: target,
+                    attacker: actor,
+                }
+            }
+        }
     };
     world.emit_child(ev, kind);
+}
+
+fn wound_system(world: &mut World, ev: &WorldEvent) {
+    let EventKind::Wounded { victim, .. } = ev.kind else {
+        return;
+    };
+    let n = world.npc_mut(victim);
+    n.wounded = true;
+    n.health = (n.health - 45).max(1);
+    n.emotions.fear += 30.0;
+    n.emotions.anger += 30.0;
+}
+
+/// Harm for its own sake. Slander becomes gossip with a lie in it.
+fn cruelty_system(world: &mut World, ev: &WorldEvent) {
+    let EventKind::Cruelty { actor, victim, act } = ev.kind else {
+        return;
+    };
+    let family = world.npc(victim).family;
+    match act {
+        Cruelty::Slander { listener, about } => {
+            world.emit_child(
+                ev,
+                EventKind::Gossip {
+                    teller: actor,
+                    listener,
+                    about,
+                    blamed: character::slander_target(victim),
+                },
+            );
+        }
+        Cruelty::KillStock => {
+            let hh = &mut world.families[family as usize].stores;
+            hh.cattle = hh.cattle.saturating_sub(1);
+        }
+        Cruelty::FoulWell => {
+            let drinkers: Vec<NpcId> = world
+                .living()
+                .filter(|n| n.family == family)
+                .map(|n| n.id)
+                .collect();
+            for d in drinkers {
+                let n = world.npc_mut(d);
+                n.health = (n.health - (25.0 * n.body.frailty()) as i32).max(1);
+                n.emotions.fear += 20.0;
+            }
+        }
+    }
+}
+
+/// The storekeeper's favor: sign the Law and Order petition, or be stripped.
+/// Signing is forgiven by the ledger and not by your neighbors.
+fn favor_system(world: &mut World, ev: &WorldEvent) {
+    let EventKind::Favor {
+        creditor,
+        debtor,
+        complied,
+    } = ev.kind
+    else {
+        return;
+    };
+    economy::settle_favor(world, debtor, complied);
+    let debtor_family = world.npc(debtor).family;
+    if complied {
+        // Signed against conscience: the mouth moves, the heart doesn't (ext. §16).
+        let n = world.npc_mut(debtor);
+        n.ideology.public = (n.ideology.public - 0.4).max(-1.0);
+        let conscience = n.ideology.private.max(0.0);
+        n.emotions.anger += 30.0 * conscience;
+        let neighbors: Vec<NpcId> = world
+            .living()
+            .filter(|n| n.faction == Faction::FreeState && n.family != debtor_family)
+            .filter(|n| n.id != PLAYER)
+            .map(|n| n.id)
+            .collect();
+        for n in neighbors {
+            if world.rng.chance(0.5) {
+                world.emit_child(
+                    ev,
+                    EventKind::OpinionChange {
+                        holder: n,
+                        target: debtor,
+                        delta: -15,
+                        after: 0,
+                    },
+                );
+            }
+        }
+    } else if debtor != PLAYER {
+        psyche::feel(world, debtor, |e| e.zeal += 15.0);
+        world.emit_child(
+            ev,
+            EventKind::OpinionChange {
+                holder: debtor,
+                target: creditor,
+                delta: -45,
+                after: 0,
+            },
+        );
+    } else {
+        world.adjust_opinion(creditor, debtor, -20);
+    }
 }
 
 /// Daily: people with a fresh accusation tell someone (§14.2 gossip clock).
@@ -438,13 +645,16 @@ pub fn spread_gossip(world: &mut World) {
     let today = world.day.0;
     let mut tellings = Vec::new();
     for n in world.living() {
-        if n.id == PLAYER {
+        if n.id == PLAYER || n.wounded {
             continue;
         }
+        // Cowards keep what they saw to themselves.
+        let coward = character::is(n, Archetype::Coward);
         let fresh = n
             .memories
             .iter()
             .filter(|m| today.saturating_sub(m.day.0) <= 20)
+            .filter(|m| !(coward && m.source == Source::Witnessed))
             .filter(|m| matches!(m.believed, Suspect::Person(_)))
             .filter(|m| m.confidence >= ACCUSATION_CONFIDENCE)
             .max_by_key(|m| (m.weight, m.day));
@@ -454,7 +664,9 @@ pub fn spread_gossip(world: &mut World) {
     }
     let mut told_today = std::collections::HashSet::new();
     for (teller, about, blamed) in tellings {
-        if !world.rng.chance(0.35) {
+        let t = world.npc(teller);
+        let talk = 0.15 + 0.4 * t.temperament.sociability + t.emotions.zeal / 250.0;
+        if !world.rng.chance(talk) {
             continue;
         }
         let here = world.farm_of(teller);

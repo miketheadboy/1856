@@ -3,9 +3,13 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::calendar::{Day, Season};
+use super::character::{self, Hidden};
+use super::economy::{self, Choice, Household};
 use super::events::{
     EVENTS_PER_TICK, EventId, EventKind, FireCause, MAX_CASCADE_DEPTH, Source, Suspect, WorldEvent,
 };
+use super::market::{self, Good, Market};
+use super::psyche::{self, Body, Emotions, Ideology, Temperament};
 use super::rng::SimRng;
 use super::systems;
 
@@ -15,11 +19,13 @@ pub type FamilyId = u32;
 /// The player is NPC 0, a member of family 0.
 pub const PLAYER: NpcId = 0;
 
-/// Days to rebuild a burned barn. Until then there is nothing left to burn.
-pub const REBUILD_DAYS: u32 = 90;
+/// Days of work to rebuild a burned barn, once there's timber (4 loads).
+/// Until then there is nothing left to burn.
+pub const REBUILD_DAYS: u32 = 30;
 
-/// Memories kept per NPC before low-salience ones are evicted (§14.4).
-pub const MEMORY_CAPACITY: usize = 32;
+/// Memories kept before low-salience ones are evicted (§14.4), by recall.
+pub const MEMORY_CAPACITY: usize = 48;
+pub const MEMORY_FLOOR: usize = 16;
 /// Memories at or above this weight are identity-forming and never evicted.
 pub const STICKY_WEIGHT: u8 = 200;
 
@@ -62,7 +68,6 @@ pub struct Npc {
     pub name: String,
     pub family: FamilyId,
     pub faction: Faction,
-    pub mood: i32,
     pub alive: bool,
     pub memories: Vec<MemoryRef>,
     /// Day this person was seen in public (tavern, church) — an alibi (§11.4).
@@ -73,14 +78,38 @@ pub struct Npc {
     pub violence: u8,
     /// Last day this person acted on a grudge. Revenge takes time to rebuild.
     pub last_revenge: Option<Day>,
+    pub age: u8,
+    /// 0 dead .. 100 well. Hunger, cold and fever take it; food brings it back.
+    pub health: i32,
+    pub emotions: Emotions,
+    pub temperament: Temperament,
+    pub body: Body,
+    pub ideology: Ideology,
+    /// Shot and survived. Can't work or ride until healed.
+    pub wounded: bool,
+    /// Luck and malice. The player never sees these.
+    pub hidden: Hidden,
 }
 
 impl Npc {
+    /// A sharp memory holds more before the small things fall away.
+    pub fn memory_capacity(&self) -> usize {
+        MEMORY_FLOOR + ((MEMORY_CAPACITY - MEMORY_FLOOR) as f32 * self.body.recall) as usize
+    }
+
+    /// Store a belief. A belief about something already remembered replaces
+    /// the old one only if it's held more strongly (a rumor that won).
     pub fn remember(&mut self, memory: MemoryRef) {
-        if self.memories.iter().any(|m| m.event == memory.event) {
+        if let Some(old) = self.memories.iter_mut().find(|m| m.event == memory.event) {
+            if memory.confidence > old.confidence && memory.believed != old.believed {
+                old.believed = memory.believed;
+                old.confidence = memory.confidence;
+                old.source = memory.source;
+                old.day = memory.day;
+            }
             return;
         }
-        if self.memories.len() >= MEMORY_CAPACITY {
+        if self.memories.len() >= self.memory_capacity() {
             let victim = self
                 .memories
                 .iter()
@@ -111,6 +140,10 @@ pub struct Family {
     pub farm: (i32, i32),
     pub barn_standing: bool,
     pub barn_burned_on: Option<Day>,
+    /// Food, seed, stock and debt (§10).
+    pub stores: Household,
+    /// The general store: sells food, extends credit, keeps a ledger.
+    pub store: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -119,6 +152,7 @@ pub struct Weather {
     pub rain: bool,
     /// 0 calm .. 1 gale
     pub wind: f32,
+    pub blizzard: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -148,6 +182,13 @@ pub struct World {
     pub weather: Vec<Weather>,
     /// 0 wet .. 1 tinder-dry.
     pub dryness: f32,
+    /// How hard this winter bites: 0.5 mild .. 1.6 brutal.
+    pub winter_severity: f32,
+    /// Let the sim make the player's household decisions (headless runs).
+    pub autopilot_player: bool,
+    /// The storekeeper is waiting on your answer (§10.2).
+    pub pending_favor: Option<NpcId>,
+    pub market: Market,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -160,6 +201,10 @@ const FAMILIES: [(&str, Faction); 8] = [
     ("Finch", Faction::FreeState),
     ("Reed", Faction::ProSlavery),
 ];
+
+/// The general store, pro-slavery, holding everyone's debt.
+const STORE: (&str, Faction) = ("Dunmore", Faction::ProSlavery);
+const PLAYER_SURNAME: &str = "Ashby";
 
 const GIVEN_NAMES: [&str; 32] = [
     "Jonas",
@@ -214,21 +259,40 @@ pub fn distance(a: (i32, i32), b: (i32, i32)) -> f32 {
 
 impl World {
     pub fn new(seed: u64) -> Self {
+        Self::with_winter(seed, None)
+    }
+
+    /// `winter` forces the winter severity; `None` rolls it from the seed.
+    pub fn with_winter(seed: u64, winter: Option<f32>) -> Self {
         let mut rng = SimRng::new(seed);
+        let rolled = 0.5 + rng.unit() * 1.1;
+        let winter_severity = winter.unwrap_or(rolled);
 
         let mut families = vec![Family {
             id: 0,
-            surname: "",
+            surname: PLAYER_SURNAME,
             faction: Faction::FreeState,
             farm: (15, 15),
             barn_standing: true,
             barn_burned_on: None,
+            stores: Household {
+                food: 3.0 * 170.0,
+                seed: 10,
+                acres: 10,
+                cattle: 3,
+                oxen: 2,
+                cash: 15,
+                prudence: 0.5,
+                ..Default::default()
+            },
+            store: false,
         }];
         let mut slots = FARM_SLOTS.to_vec();
         for (surname, faction) in FAMILIES {
             let slot = slots.remove(rng.range(0, slots.len() as u32) as usize);
             let jitter = |rng: &mut SimRng| rng.range(0, 5) as i32 - 2;
             let farm = (slot.0 + jitter(&mut rng), slot.1 + jitter(&mut rng));
+            let acres = rng.range(6, 14);
             families.push(Family {
                 id: families.len() as FamilyId,
                 surname,
@@ -236,39 +300,121 @@ impl World {
                 farm,
                 barn_standing: true,
                 barn_burned_on: None,
+                stores: Household {
+                    seed: acres,
+                    acres,
+                    cattle: rng.range(1, 7),
+                    oxen: rng.range(0, 3),
+                    cash: rng.range(0, 25) as i32,
+                    prudence: rng.unit(),
+                    proud: rng.chance(0.3),
+                    impulsive: rng.chance(0.2),
+                    ..Default::default()
+                },
+                store: false,
             });
         }
+        families.push(Family {
+            id: families.len() as FamilyId,
+            surname: STORE.0,
+            faction: STORE.1,
+            farm: (15, 10),
+            barn_standing: true,
+            barn_burned_on: None,
+            stores: Household {
+                food: 5000.0,
+                cash: 500,
+                cattle: 4,
+                ..Default::default()
+            },
+            store: true,
+        });
 
         let mut npcs = vec![Npc {
             id: PLAYER,
             name: "You".into(),
             family: 0,
             faction: Faction::FreeState,
-            mood: 60,
             alive: true,
             memories: Vec::new(),
             alibi: None,
             plotting: None,
             violence: 0,
             last_revenge: None,
+            age: 31,
+            health: 100,
+            emotions: Emotions::default(),
+            temperament: Temperament {
+                temper: 0.3,
+                courage: 0.5,
+                piety: 0.4,
+                generosity: 0.5,
+                honesty: 0.7,
+                sociability: 0.5,
+                skepticism: 0.5,
+                loyalty: 0.5,
+            },
+            body: Body {
+                strength: 0.6,
+                hardiness: 0.6,
+                marksmanship: 0.5,
+                stealth: 0.5,
+                alertness: 0.5,
+                recall: 1.0,
+            },
+            ideology: Ideology::for_faction(Faction::FreeState, 0.6),
+            wounded: false,
+            hidden: Hidden::default(),
         }];
         let mut given: Vec<&str> = GIVEN_NAMES.to_vec();
-        for family in families.iter().skip(1) {
-            let size = rng.range(2, 4);
-            for _ in 0..size {
+        for family in families.iter() {
+            // You, a spouse, a child. The child is who hunger takes first.
+            let size = match family.id {
+                0 => 2,
+                _ if family.store => 2,
+                _ => rng.range(2, 4),
+            };
+            for slot in 0..size {
                 let first = given.remove(rng.range(0, given.len() as u32) as usize);
+                // Two adults (sometimes an elder), then children. Your family: a spouse, a child.
+                let adults = if family.id == 0 { 1 } else { 2 };
+                let age = if slot < adults {
+                    if rng.chance(0.12) {
+                        55 + rng.range(0, 15)
+                    } else {
+                        19 + rng.range(0, 34)
+                    }
+                } else {
+                    3 + rng.range(0, 12)
+                } as u8;
+                let conviction = 0.2 + rng.unit() * 0.8;
+                let mut ideology = Ideology::for_faction(family.faction, conviction);
+                // A few people privately don't believe what their family says (ext. §16).
+                if rng.chance(0.1) {
+                    ideology.private = -ideology.private * 0.5;
+                }
+                let temperament = Temperament::roll(&mut rng);
+                let body = Body::roll(&mut rng, age);
+                let hidden = Hidden::roll(&mut rng);
                 npcs.push(Npc {
                     id: npcs.len() as NpcId,
                     name: format!("{} {}", first, family.surname),
                     family: family.id,
                     faction: family.faction,
-                    mood: 45 + rng.range(0, 25) as i32,
                     alive: true,
                     memories: Vec::new(),
                     alibi: None,
                     plotting: None,
                     violence: 0,
                     last_revenge: None,
+                    age,
+                    health: 100,
+                    emotions: Emotions::default(),
+                    temperament,
+                    body,
+                    ideology,
+                    wounded: false,
+                    hidden,
                 });
             }
         }
@@ -288,7 +434,24 @@ impl World {
             feuds: HashSet::new(),
             weather: Vec::new(),
             dryness: 0.3,
+            winter_severity,
+            autopilot_player: true,
+            pending_favor: None,
+            market: Market::new(),
         };
+
+        // Winter stores: most families went into 1855 short.
+        for f in 1..world.families.len() {
+            if world.families[f].store {
+                continue;
+            }
+            let m = world
+                .npcs
+                .iter()
+                .filter(|n| n.family == f as FamilyId)
+                .count() as f32;
+            world.families[f].stores.food = m * (120.0 + world.rng.range(0, 110) as f32);
+        }
 
         // Old grudges from before the game starts: people mostly blame
         // whoever they already hated (§11.2), so the world needs some hate.
@@ -461,6 +624,10 @@ impl World {
         self.rebuild_barns();
         self.release_scheduled();
         self.natural_fires();
+        market::daily(self);
+        economy::daily(self);
+        psyche::daily(self);
+        character::daily_evil(self);
         systems::spread_gossip(self);
         if self.day.is_first_of_month() {
             self.monthly();
@@ -485,31 +652,60 @@ impl World {
         // A storm is not always a soaking one; dry lightning is the dangerous kind.
         let rain = self.rng.chance(rain_p) || (storm && self.rng.chance(0.5));
         let wind = self.rng.unit();
+        let blizzard =
+            self.day.season() == Season::Winter && self.rng.chance(0.05 * self.winter_severity);
         self.dryness = if rain {
             self.dryness * 0.35
         } else {
             (self.dryness + 0.04).min(1.0)
         };
-        self.weather.push(Weather { storm, rain, wind });
+        self.weather.push(Weather {
+            storm,
+            rain,
+            wind,
+            blizzard,
+        });
     }
 
+    /// A barn goes back up once there's timber for it and a few weeks' work.
+    /// Families who can't buy timber cut their own along the creek: slow, and
+    /// the good stands are on someone else's land.
     fn rebuild_barns(&mut self) {
         let today = self.day.0;
         for f in &mut self.families {
+            let timber = &mut f.stores.goods[Good::Timber.index()];
+            if f.barn_burned_on
+                .is_some_and(|d| today == d.0 + REBUILD_DAYS * 2)
+                && *timber < 4.0
+            {
+                *timber = 4.0;
+            }
             if f.barn_burned_on
                 .is_some_and(|d| today >= d.0 + REBUILD_DAYS)
+                && *timber >= 4.0
             {
+                *timber -= 4.0;
                 f.barn_standing = true;
                 f.barn_burned_on = None;
             }
         }
     }
 
-    /// Some people are seen in town each day. Being seen is an alibi.
+    /// Some people are seen in town each day; the pious are seen at church on
+    /// Sundays. Being seen is an alibi.
     fn roll_alibis(&mut self) {
         let day = self.day;
+        let sunday = day.0 % 7 == 3;
         for i in 1..self.npcs.len() {
-            if self.npcs[i].alive && self.rng.chance(0.12) {
+            let n = &self.npcs[i];
+            if !n.alive || n.wounded {
+                continue;
+            }
+            let mut p = 0.04 + 0.16 * n.temperament.sociability;
+            if sunday {
+                p += 0.6 * n.temperament.piety;
+            }
+            if self.rng.chance(p) {
                 self.npcs[i].alibi = Some(day);
             }
         }
@@ -551,7 +747,9 @@ impl World {
             let Some(head) = self.head_of(f as FamilyId) else {
                 continue;
             };
-            let cause = if weather.storm && self.rng.chance(0.015) {
+            // Luck is hidden, but lightning knows.
+            let luck = self.npc(head).hidden.luck;
+            let cause = if weather.storm && self.rng.chance(0.015 / luck) {
                 Some(FireCause::Lightning)
             } else if season == Season::Winter && self.rng.chance(0.0015) {
                 Some(FireCause::Hearth)
@@ -577,22 +775,26 @@ impl World {
     }
 
     fn monthly(&mut self) {
-        // Trust is slow to rebuild (§13): grudges soften by 2 a month.
+        // Trust is slow to rebuild (§13): grudges soften a little each month,
+        // faster for the pious.
         let keys: Vec<_> = self.relationships.keys().copied().collect();
         for (a, b) in keys {
             let default = self.default_opinion(a, b);
             let value = self.relationships[&(a, b)];
             if value < default {
-                self.relationships.insert((a, b), (value + 2).min(default));
+                let n = self.npc(a);
+                let deacon = if character::is(n, character::Archetype::Deacon) {
+                    2
+                } else {
+                    1
+                };
+                let thaw = (2 + (4.0 * n.temperament.piety) as i16) * deacon;
+                self.relationships
+                    .insert((a, b), (value + thaw).min(default));
             }
         }
         for g in &mut self.grievance {
             *g = (*g - 12).max(0);
-        }
-        for n in &mut self.npcs {
-            if n.alive && n.mood < 60 {
-                n.mood += 5;
-            }
         }
     }
 
@@ -630,6 +832,63 @@ impl World {
         );
         self.run_cascades();
         Some(id)
+    }
+
+    /// A hard choice for your own household (§10). Returns whether it fed anyone.
+    pub fn player_choose(&mut self, choice: Choice) -> bool {
+        if !self.player_alive() {
+            return false;
+        }
+        let done = economy::act(self, 0, choice);
+        self.run_cascades();
+        done
+    }
+
+    /// Buy at Dunmore's. Buy enough and you move the price (§ market).
+    pub fn player_buy(&mut self, good: Good, qty: f32) -> f32 {
+        if !self.player_alive() {
+            return 0.0;
+        }
+        let got = market::buy(self, 0, good, qty);
+        self.run_cascades();
+        got
+    }
+
+    /// Sell to Dunmore's at the store's bid.
+    pub fn player_sell(&mut self, good: Good, qty: f32) -> i32 {
+        if !self.player_alive() {
+            return 0;
+        }
+        let dollars = market::sell(self, 0, good, qty);
+        self.run_cascades();
+        dollars
+    }
+
+    /// Steal from a particular neighbor.
+    pub fn player_steal(&mut self, from: NpcId) -> bool {
+        if !self.player_alive() || from == PLAYER || !self.npc(from).alive {
+            return false;
+        }
+        let family = self.npc(from).family;
+        economy::steal_from(self, PLAYER, family, from);
+        self.run_cascades();
+        true
+    }
+
+    /// Answer the storekeeper. Sign his petition, or lose what he can carry off.
+    pub fn player_answer_favor(&mut self, sign: bool) {
+        let Some(creditor) = self.pending_favor.take() else {
+            return;
+        };
+        self.emit_root(
+            EventKind::Favor {
+                creditor,
+                debtor: PLAYER,
+                complied: sign,
+            },
+            None,
+        );
+        self.run_cascades();
     }
 
     /// Be seen in town today. Visibility is an alibi (§11.4).

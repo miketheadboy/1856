@@ -84,7 +84,7 @@ fn prior_hostility_dominates_attribution() {
     // Find two outsiders; make the owner hate one of them.
     let outsiders: Vec<NpcId> = w
         .living()
-        .filter(|n| n.id != PLAYER && n.family != w.npc(owner).family)
+        .filter(|n| n.id != PLAYER && n.family != w.npc(owner).family && n.age >= 16)
         .map(|n| n.id)
         .take(2)
         .collect();
@@ -182,7 +182,8 @@ fn memory_is_capped_but_sticky_survives() {
             weight: 10,
         });
     }
-    assert_eq!(npc.memories.len(), MEMORY_CAPACITY);
+    assert_eq!(npc.memories.len(), npc.memory_capacity());
+    assert!(npc.memory_capacity() <= MEMORY_CAPACITY);
     assert!(npc.memory_of(9999).is_some());
 }
 
@@ -197,5 +198,30 @@ fn some_seed_produces_a_war_nobody_started() {
     assert!(
         found,
         "no seed in 1..=40 produced a feud rooted in a natural fire"
+    );
+}
+
+/// The player can corner corn. The county notices.
+#[test]
+fn cornering_corn_spikes_the_price_and_breeds_resentment() {
+    use super::market::Good;
+    let mut w = World::new(21);
+    w.winter_severity = 1.6;
+    w.autopilot_player = false;
+    w.run_days(60); // into the cold
+    let before = w.market.price(Good::Corn);
+    w.families[0].stores.cash = 5000;
+    w.player_buy(Good::Corn, 10_000.0);
+    assert!(w.market.stock(Good::Corn) < 1.0, "bought the store out");
+    w.run_days(1);
+    assert!(
+        w.market.price(Good::Corn) > before * 2.0,
+        "scarcity moves the price"
+    );
+    let rep_before: f32 = super::psyche::reputation(&w, PLAYER);
+    w.run_days(90);
+    assert!(
+        super::psyche::reputation(&w, PLAYER) < rep_before,
+        "the hoarder's name goes bad in a hungry winter"
     );
 }

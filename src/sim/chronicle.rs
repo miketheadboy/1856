@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 
-use super::events::{EventId, EventKind, FireCause, Retaliation, Source, Suspect, WorldEvent};
+use super::events::{
+    Cruelty, Desperate, EventId, EventKind, FireCause, Hardship, Loot, Retaliation, Source,
+    Suspect, WorldEvent,
+};
 use super::world::{NpcId, PLAYER, World};
 
 fn who(world: &World, id: NpcId) -> String {
@@ -80,11 +83,11 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
         }
         EventKind::Belief {
             holder,
+            about,
             blamed,
             confidence,
             source,
             reason,
-            ..
         } => {
             let how = match source {
                 Source::Witnessed => "saw".to_string(),
@@ -92,11 +95,17 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Source::Bystander => "suspects".into(),
                 Source::Told(t) => format!("heard from {} and blames", who(world, t)),
             };
+            let stray = blamed == Suspect::Accident
+                && matches!(world.events[about as usize].kind, EventKind::Theft { .. });
             format!(
                 "[ATTRIBUTION] {} {} {} ({}%) — {}",
                 who(world, holder),
                 how,
-                suspect_label(world, blamed),
+                if stray {
+                    "nobody".to_string()
+                } else {
+                    suspect_label(world, blamed)
+                },
                 confidence,
                 reason
             )
@@ -143,6 +152,155 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             family_label(world, a),
             family_label(world, b)
         ),
+        EventKind::Perished { victim, cause } => {
+            let how = match cause {
+                Hardship::Hunger => "starved",
+                Hardship::Cold => "froze",
+                Hardship::Fever => "died of a fever",
+            };
+            if victim == PLAYER {
+                format!("[DEATH] You {}", how)
+            } else {
+                format!("[DEATH] {} {}", who(world, victim), how)
+            }
+        }
+        EventKind::Theft {
+            thief,
+            victim,
+            loot,
+        } => {
+            let what = match loot {
+                Loot::Cow => "A cow was taken",
+                Loot::Grain => "A sack of grain was taken",
+            };
+            let place = if world.npc(victim).family == 0 {
+                "your place".to_string()
+            } else {
+                format!("the {} place", world.family_of(victim).surname)
+            };
+            let truth = if omniscient || thief == PLAYER {
+                format!(" [truth: {}]", who(world, thief))
+            } else {
+                String::new()
+            };
+            format!("[THEFT] {} from {}{}", what, place, truth)
+        }
+        EventKind::Desperation { family, act } => {
+            let fam = capitalize(&family_label(world, family));
+            let line = match act {
+                Desperate::EatSeed { bushels } => {
+                    format!(
+                        "{} ate {} bushel{} of their seed corn",
+                        fam,
+                        bushels,
+                        if bushels == 1 { "" } else { "s" }
+                    )
+                }
+                Desperate::Slaughter => format!("{} butchered breeding stock", fam),
+                Desperate::SlaughterOx => format!("{} butchered a plow ox", fam),
+                Desperate::Borrow { lender, dollars } => {
+                    format!(
+                        "{} bought ${} of food on credit from {}",
+                        fam,
+                        dollars,
+                        who(world, lender)
+                    )
+                }
+                Desperate::Beg { neighbor, granted } => format!(
+                    "{} begged {} for food{}",
+                    fam,
+                    who(world, neighbor),
+                    if granted {
+                        " and were fed"
+                    } else {
+                        " and were turned away"
+                    }
+                ),
+            };
+            format!("[HUNGER] {}", line)
+        }
+        EventKind::Wounded { victim, attacker } => {
+            let by = if omniscient || attacker == PLAYER {
+                format!(" [truth: {}]", who(world, attacker))
+            } else {
+                String::new()
+            };
+            format!(
+                "[WOUNDED] {} was shot from the brush and lived{}",
+                capitalize(&who(world, victim)),
+                by
+            )
+        }
+        EventKind::Cruelty { actor, victim, act } => {
+            let truth = if omniscient {
+                format!(" [truth: {}]", who(world, actor))
+            } else {
+                String::new()
+            };
+            let place = if world.npc(victim).family == 0 {
+                "your place".to_string()
+            } else {
+                format!("the {} place", world.family_of(victim).surname)
+            };
+            match act {
+                Cruelty::Slander { listener, .. } => format!(
+                    "[SLANDER] Someone whispered to {} about {}{}",
+                    who(world, listener),
+                    who(world, victim),
+                    truth
+                ),
+                Cruelty::KillStock => {
+                    format!("[CRUELTY] A cow was found shot at {}{}", place, truth)
+                }
+                Cruelty::FoulWell => format!("[CRUELTY] The well at {} was fouled{}", place, truth),
+            }
+        }
+        EventKind::PriceMove {
+            good,
+            cents,
+            rising,
+        } => format!(
+            "[MARKET] {} {} to ${}.{:02} a {} at Dunmore's",
+            capitalize(good.label()),
+            if rising { "up" } else { "down" },
+            cents / 100,
+            cents % 100,
+            good.unit()
+        ),
+        EventKind::Harvest {
+            family,
+            planted,
+            food,
+        } => {
+            let fam = capitalize(&family_label(world, family));
+            if planted == 0 {
+                format!("[HARVEST] {} had nothing in the ground", fam)
+            } else {
+                format!(
+                    "[HARVEST] {} brought in {} acres: about {} days of food",
+                    fam, planted, food
+                )
+            }
+        }
+        EventKind::Favor {
+            creditor,
+            debtor,
+            complied,
+        } => {
+            if complied {
+                format!(
+                    "[DEBT] {} signed {}'s Law and Order petition to settle up",
+                    capitalize(&who(world, debtor)),
+                    who(world, creditor)
+                )
+            } else {
+                format!(
+                    "[DEBT] {} refused {}'s petition. The store seized their stock",
+                    capitalize(&who(world, debtor)),
+                    who(world, creditor)
+                )
+            }
+        }
         EventKind::Retaliation {
             actor,
             target,
@@ -156,6 +314,14 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Retaliation::Ambush => "with a rifle",
             }
         ),
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(first) => first.to_uppercase().chain(c).collect(),
+        None => String::new(),
     }
 }
 
@@ -179,6 +345,10 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
     match ev.kind {
         EventKind::Gossip { .. } | EventKind::Grief { .. } => false,
         EventKind::Retaliation { .. } => omniscient,
+        EventKind::Cruelty {
+            act: Cruelty::Slander { .. },
+            ..
+        } => omniscient,
         EventKind::OpinionChange { delta, .. } => delta <= -40,
         EventKind::Belief {
             holder,
