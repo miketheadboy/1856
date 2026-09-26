@@ -60,8 +60,9 @@ pub struct Household {
 
 impl Household {
     /// Money trouble and hunger make people dangerous: nothing left to lose.
+    /// So does knowing there's nothing to plant.
     pub fn desperate(&self) -> bool {
-        self.hungry_days > 0 || self.debt >= 30
+        self.hungry_days > 0 || self.debt >= 30 || self.seed * 2 < self.acres
     }
 
     /// Everyone can see a family is starving: they come begging, they look thin.
@@ -181,6 +182,7 @@ pub fn daily(world: &mut World) {
 /// What a hungry household tries, in the order its temperament suggests.
 fn decide(world: &mut World, family: FamilyId) {
     let hungry = world.families[family as usize].stores.hungry_days > 0;
+    let cattle = world.families[family as usize].stores.cattle;
     let free_state = world.families[family as usize].faction == Faction::FreeState;
 
     // Buying with cash on hand is just shopping. Hunting is just work.
@@ -234,7 +236,9 @@ fn decide(world: &mut World, family: FamilyId) {
     for choice in order {
         let done = match choice {
             // A Free-State family goes to the pro-slavery store only when it has to.
-            Choice::Borrow if free_state && !hungry => false,
+            // A Free-State family goes to the pro-slavery store when it's
+            // hungry or has nothing left to butcher.
+            Choice::Borrow if free_state && !hungry && cattle > 2 => false,
             Choice::Steal if !hungry && !impulsive && !skinflint => false,
             Choice::Beg if proud => false,
             c => act(world, family, *c),
@@ -619,7 +623,7 @@ fn monthly(world: &mut World) {
         let family = f as FamilyId;
         // The storekeeper's politics come due with the interest.
         if world.families[f].faction == Faction::FreeState
-            && debt >= 20
+            && debt >= 12
             && world.rng.chance(0.35)
             && let Some(debtor) = world.head_of(family)
         {

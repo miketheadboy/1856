@@ -315,7 +315,9 @@ pub fn daily(world: &mut World) {
         let frailty = n.body.frailty();
         if hungry {
             n.health -= (stage.starvation_rate() as f32 * frailty).round() as i32;
-            n.emotions.fear += 2.0;
+            // Hunger frightens, and it angers: someone must be to blame.
+            n.emotions.fear += 1.5;
+            n.emotions.anger += 1.5;
         } else if n.health < 100 {
             n.health += 1;
         }

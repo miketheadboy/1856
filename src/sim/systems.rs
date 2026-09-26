@@ -462,7 +462,7 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
     p += psyche::revenge_drive(world, holder);
     // A gunshot wound or a bad winter radicalizes by the economic path.
     if world.families[h.family as usize].stores.desperate() {
-        p += 0.15;
+        p += 0.25;
     }
     let h = world.npc(holder);
     let zealot = character::is(h, Archetype::Zealot);
