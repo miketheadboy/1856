@@ -33,6 +33,7 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     cruelty_system(world, ev);
     wound_system(world, ev);
     press_system(world, ev);
+    super::ghosts::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
@@ -193,7 +194,8 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         });
         let keen = 0.6 + 0.8 * world.npc(observer).body.alertness;
         // Timber hides a rider; open prairie shows him for miles (§7.4).
-        let terrain = world.map.at(site).visibility();
+        // A full moon shows him too; a dark or clouded one hides him.
+        let terrain = world.map.at(site).visibility() * (0.5 + 0.9 * world.night_light(ev.day));
         let saw = actor.filter(|_| world.rng.chance(sight * hidden * keen * terrain));
         if !stakeholder {
             psyche::feel(world, observer, |e| e.fear += 10.0);
@@ -383,8 +385,8 @@ fn faction_system(world: &mut World, ev: &WorldEvent) {
     // The loyal take their side's wounds personally.
     let bump = (base * (0.5 + world.npc(holder).temperament.loyalty)) as i32;
     let before = world.grievance[faction.index()];
-    let after = before + bump;
-    world.grievance[faction.index()] = after;
+    world.add_grievance(faction, bump);
+    let after = world.grievance[faction.index()];
     let crossed = [30, AUTHORIZE_AT, 100]
         .iter()
         .any(|t| before < *t && after >= *t);
@@ -469,6 +471,10 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
     let hothead = character::is(h, Archetype::Hothead);
     if zealot {
         p *= 1.5;
+    }
+    // Sworn on a grave.
+    if world.ghosts.oath_against(holder, target) {
+        p += 0.3;
     }
     // Dragoons on the roads: people think twice.
     if world.pacified_until.is_some_and(|d| ev.day < d) {

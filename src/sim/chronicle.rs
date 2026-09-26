@@ -102,6 +102,9 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Source::Witnessed => "saw".to_string(),
                 Source::Victim => "blames".into(),
                 Source::Bystander => "suspects".into(),
+                Source::Told(t) if !world.npc(t).alive => {
+                    format!("heard from the ghost of {} and blames", who(world, t))
+                }
                 Source::Told(t) => format!("heard from {} and blames", who(world, t)),
                 Source::Newspaper(p) => format!("read in the {} and blames", p.name()),
             };
@@ -358,6 +361,44 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                     "[SCANDAL] Word got around about what {} did in Westport",
                     who(world, victim)
                 )
+            }
+        }
+        EventKind::OathSworn {
+            holder,
+            target,
+            over,
+        } => format!(
+            "[OATH] {}, {}, swore on {} grave to see {} dead",
+            capitalize(&who(world, holder)),
+            world.npc(holder).age,
+            whose(world, over),
+            who(world, target)
+        ),
+        EventKind::OathInherited { heir, target } => format!(
+            "[OATH] The oath against {} passed to {}",
+            who(world, target),
+            who(world, heir)
+        ),
+        EventKind::OathWakes { holder, target } => format!(
+            "[OATH] {} is {} now, and has not forgotten {}",
+            capitalize(&who(world, holder)),
+            world.npc(holder).age,
+            who(world, target)
+        ),
+        EventKind::SpiritSeen { witness, spirit } => format!(
+            "[SPIRIT] {} saw {} standing in the dark where it happened",
+            capitalize(&who(world, witness)),
+            if spirit == PLAYER {
+                "you".to_string()
+            } else {
+                world.name(spirit).to_string()
+            }
+        ),
+        EventKind::SpiritRests { spirit } => {
+            if spirit == PLAYER {
+                "[SPIRIT] You rest easy now".to_string()
+            } else {
+                format!("[SPIRIT] {} rests easy now", world.name(spirit))
             }
         }
         EventKind::History { index } => {

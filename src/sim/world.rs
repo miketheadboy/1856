@@ -22,6 +22,10 @@ pub type FamilyId = u32;
 /// The player is NPC 0, a member of family 0.
 pub const PLAYER: NpcId = 0;
 
+/// Faction grievance ceiling. Thresholds (30 angry, 60 revenge authorized,
+/// 100 open war) sit under it.
+pub const GRIEVANCE_MAX: i32 = 150;
+
 /// Days of work to rebuild a burned barn, once there's timber (4 loads).
 /// Until then there is nothing left to burn.
 pub const REBUILD_DAYS: u32 = 30;
@@ -215,6 +219,7 @@ pub struct World {
     /// One row per day for charts and debugging (see `debug`).
     pub metrics: Vec<super::debug::DailyMetrics>,
     pub institutions: super::institutions::Institutions,
+    pub ghosts: super::ghosts::Ghosts,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -443,6 +448,7 @@ impl World {
             bison: super::bison::Herd::default(),
             metrics: Vec::new(),
             institutions: super::institutions::Institutions::default(),
+            ghosts: super::ghosts::Ghosts::default(),
         };
         for f in 0..world.families.len() {
             let farm = world.families[f].farm;
@@ -504,6 +510,25 @@ impl World {
             .get(day.0 as usize)
             .copied()
             .unwrap_or_default()
+    }
+
+    /// Add to a faction's grievance. It saturates: each new outrage matters
+    /// less to a side already at war, and it never passes the ceiling.
+    pub fn add_grievance(&mut self, faction: Faction, amount: i32) {
+        let g = &mut self.grievance[faction.index()];
+        let room = (1.0 - *g as f32 / GRIEVANCE_MAX as f32).max(0.05);
+        *g = (*g + (amount as f32 * room).round() as i32).clamp(0, GRIEVANCE_MAX);
+    }
+
+    /// How well you can see at night: moonlight, dimmed by cloud.
+    pub fn night_light(&self, day: Day) -> f32 {
+        let w = self.weather_on(day);
+        let cloud = if w.storm || w.rain || w.blizzard {
+            0.2
+        } else {
+            1.0
+        };
+        day.moonlight() * cloud
     }
 
     /// First living member of a family: who a fire is "against".
@@ -641,6 +666,7 @@ impl World {
         economy::daily(self);
         psyche::daily(self);
         character::daily_evil(self);
+        super::ghosts::daily(self);
         systems::spread_gossip(self);
         super::institutions::weekly(self);
         if self.day.is_first_of_month() {
@@ -757,6 +783,19 @@ impl World {
         self.scheduled = later;
         for s in due {
             let kind = match s.kind {
+                EventKind::Retaliation { actor, .. }
+                    if self.night_light(today) > 0.6
+                        && self.npc(actor).body.stealth > 0.5
+                        && self.npc(actor).alive =>
+                {
+                    // The careful wait for a dark moon.
+                    self.scheduled.push(Scheduled {
+                        day: Day(today.0 + 4),
+                        kind: s.kind,
+                        caused_by: s.caused_by,
+                    });
+                    continue;
+                }
                 EventKind::Retaliation {
                     actor,
                     target,
@@ -836,11 +875,16 @@ impl World {
         // Grievance fades by a fifth a month: old wrongs lose their heat unless
         // new ones feed them.
         for g in &mut self.grievance {
-            *g = (*g as f32 * 0.8) as i32;
+            // Hot grievance cools faster: a quarter a month above war level.
+            let rate = if *g > 100 { 0.75 } else { 0.8 };
+            *g = (*g as f32 * rate) as i32;
         }
         nations::monthly(self);
         super::bison::monthly(self);
         super::institutions::monthly(self);
+        if self.day.month() == 11 {
+            super::ghosts::yearly(self);
+        }
     }
 
     // ---- player verbs --------------------------------------------------

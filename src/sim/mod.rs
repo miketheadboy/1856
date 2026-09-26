@@ -12,6 +12,7 @@ pub mod debug;
 pub mod economy;
 pub mod events;
 pub mod geography;
+pub mod ghosts;
 pub mod history;
 pub mod institutions;
 pub mod market;

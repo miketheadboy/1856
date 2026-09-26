@@ -250,6 +250,31 @@ pub enum EventKind {
         extorter: NpcId,
         paid: bool,
     },
+    /// Kin of the dead swears on the grave.
+    OathSworn {
+        holder: NpcId,
+        target: NpcId,
+        over: NpcId,
+    },
+    /// The oath passes to the next of kin.
+    OathInherited {
+        heir: NpcId,
+        target: NpcId,
+    },
+    /// A child who swore comes of age.
+    OathWakes {
+        holder: NpcId,
+        target: NpcId,
+    },
+    /// Someone saw the dead, out by the place it happened.
+    SpiritSeen {
+        witness: NpcId,
+        spirit: NpcId,
+    },
+    /// The truth is known, or the killer is dead. The haunting stops.
+    SpiritRests {
+        spirit: NpcId,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

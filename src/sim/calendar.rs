@@ -29,7 +29,40 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
+/// Lunar phase on day 0 (1 Nov 1855), from the new moon of 6 Jan 2000
+/// 18:14 UTC and the mean synodic month. 0 = new, 0.5 = full.
+const MOON_AT_DAY0: f32 = 0.7047;
+const SYNODIC_MONTH: f32 = 29.530_589;
+
 impl Day {
+    /// 0 new .. 0.5 full .. 1 new again.
+    pub fn moon_phase(self) -> f32 {
+        (MOON_AT_DAY0 + self.0 as f32 / SYNODIC_MONTH).fract()
+    }
+
+    /// 0 dark .. 1 full: how much a night-rider can be seen by.
+    pub fn moonlight(self) -> f32 {
+        (1.0 - (std::f32::consts::TAU * self.moon_phase()).cos()) / 2.0
+    }
+
+    /// Waxing: "the light of the moon", when the almanac says to plant.
+    pub fn waxing(self) -> bool {
+        self.moon_phase() < 0.5
+    }
+
+    pub fn moon_name(self) -> &'static str {
+        match self.moon_phase() {
+            p if !(0.035..0.965).contains(&p) => "new moon",
+            p if p < 0.215 => "waxing crescent",
+            p if p < 0.285 => "first quarter",
+            p if p < 0.465 => "waxing gibbous",
+            p if p < 0.535 => "full moon",
+            p if p < 0.715 => "waning gibbous",
+            p if p < 0.785 => "last quarter",
+            _ => "waning crescent",
+        }
+    }
+
     /// (year, month 1-12, day 1-31)
     pub fn date(self) -> (i32, u32, u32) {
         let (mut year, mut month, mut left) = (START_YEAR, START_MONTH, self.0);
@@ -80,6 +113,24 @@ impl fmt::Display for Day {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_moon_was_full_the_night_before_lawrence_burned() {
+        // Full moon 19-20 May 1856; the Sack was the 21st.
+        let d = (0..400)
+            .map(Day)
+            .find(|d| d.date() == (1856, 5, 20))
+            .unwrap();
+        assert!(d.moonlight() > 0.97, "{}", d.moonlight());
+        assert_eq!(d.moon_name(), "full moon");
+    }
+
+    #[test]
+    fn moon_cycles_in_a_synodic_month() {
+        let a = Day(100).moon_phase();
+        let b = Day(100 + 59).moon_phase();
+        assert!((a - b).abs() < 0.03);
+    }
 
     #[test]
     fn calendar_rolls_over_years_and_leap_day() {

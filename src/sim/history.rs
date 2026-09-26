@@ -453,8 +453,8 @@ pub fn daily(world: &mut World) {
 
 pub fn apply(world: &mut World, e: &Effect) {
     // Distant outrages count, but less than a neighbor's barn.
-    world.grievance[Faction::FreeState.index()] += e.grievance_free / 2;
-    world.grievance[Faction::ProSlavery.index()] += e.grievance_pro / 2;
+    world.add_grievance(Faction::FreeState, e.grievance_free / 2);
+    world.add_grievance(Faction::ProSlavery, e.grievance_pro / 2);
     let people: Vec<(NpcId, Faction)> = world.living().map(|n| (n.id, n.faction)).collect();
     for (id, faction) in people {
         let zeal = match faction {

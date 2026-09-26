@@ -313,7 +313,7 @@ pub fn daily(world: &mut World) {
 
     // Blockade: the river closes when the county's at war with itself.
     let tension = world.grievance[0] + world.grievance[1];
-    world.market.blockade = tension >= 110 || world.market.freight_factor < 0.5;
+    world.market.blockade = tension >= 200 || world.market.freight_factor < 0.5;
 
     // Monday: the Westport wagons, and the rest of the county's week.
     if today.0.is_multiple_of(7) {

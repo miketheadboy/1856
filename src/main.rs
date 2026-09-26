@@ -77,6 +77,10 @@ struct NpcSprite {
 #[derive(Component)]
 struct BarnSprite(FamilyId);
 
+/// A pale light over a restless grave. Pooled; the sim decides where.
+#[derive(Component)]
+struct Wisp(usize);
+
 #[derive(Component)]
 enum Label {
     Header,
@@ -135,6 +139,7 @@ fn main() {
                 handle_actions,
                 draw_npcs,
                 draw_barns,
+                draw_spirits,
                 update_panels,
             )
                 .chain(),
@@ -272,6 +277,18 @@ fn setup_map(mut commands: Commands, sim: Res<Sim>, fonts: Res<Fonts>) {
             },
             TextColor(Color::srgb(0.08, 0.07, 0.06)),
             Transform::from_translation((at + Vec2::new(0.0, -13.0)).extend(3.0)),
+        ));
+    }
+
+    for i in 0..16 {
+        commands.spawn((
+            Sprite {
+                color: Color::srgba(0.85, 0.92, 1.0, 0.0),
+                custom_size: Some(Vec2::splat(13.0)),
+                ..default()
+            },
+            Transform::from_translation(Vec3::new(0.0, 0.0, 4.0)),
+            Wisp(i),
         ));
     }
 
@@ -580,6 +597,52 @@ fn draw_npcs(
     }
 }
 
+/// Graves where people were killed; wisps over the ones still restless.
+fn draw_spirits(
+    mut commands: Commands,
+    time: Res<Time>,
+    sim: Res<Sim>,
+    fonts: Res<Fonts>,
+    mut graves: Local<usize>,
+    mut wisps: Query<(&Wisp, &mut Transform, &mut Sprite)>,
+) {
+    let world = &sim.0;
+    let haunts = &world.ghosts.haunts;
+    while *graves < haunts.len() {
+        let h = &haunts[*graves];
+        let jitter = Vec2::new((*graves % 3) as f32 * 4.0 - 4.0, 6.0);
+        commands.spawn((
+            Text2d::new("\u{2020}"),
+            TextFont {
+                font: fonts.body.clone(),
+                font_size: 20.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.12, 0.05, 0.04)),
+            Transform::from_translation((tile_to_world(h.site) + jitter).extend(3.5)),
+        ));
+        *graves += 1;
+    }
+    let t = time.elapsed_secs();
+    let restless: Vec<_> = haunts.iter().filter(|h| h.restless).collect();
+    for (w, mut tf, mut sprite) in &mut wisps {
+        match restless.get(w.0) {
+            Some(h) => {
+                let phase = w.0 as f32 * 1.7;
+                let drift = Vec2::new(
+                    (t * 0.4 + phase).sin() * 9.0,
+                    (t * 0.7 + phase).cos() * 5.0 + 8.0,
+                );
+                tf.translation = (tile_to_world(h.site) + drift).extend(4.0);
+                // Brighter under a full moon.
+                let glow = 0.5 + 0.3 * world.day.moonlight() + 0.15 * (t * 1.3 + phase).sin();
+                sprite.color = Color::srgba(0.92, 0.97, 1.0, glow.clamp(0.3, 0.95));
+            }
+            None => sprite.color = Color::srgba(0.85, 0.92, 1.0, 0.0),
+        }
+    }
+}
+
 fn draw_barns(sim: Res<Sim>, mut barns: Query<(&BarnSprite, &mut Sprite)>) {
     for (barn, mut sprite) in &mut barns {
         sprite.color = if sim.0.families[barn.0 as usize].barn_standing {
@@ -810,19 +873,19 @@ fn update_panels(
                     ""
                 };
                 format!(
-                    "{}   {}, wind {:.0}%, dryness {:.0}%{}",
+                    "{}   {}, {}, wind {:.0}%{}",
                     world.day,
                     sky,
+                    world.day.moon_name(),
                     w.wind * 100.0,
-                    world.dryness * 100.0,
                     status
                 )
             }
             Label::Tension => format!(
                 "Free-State grievance  {} {}\nPro-Slavery grievance {} {}{}",
-                bar(world.grievance[Faction::FreeState.index()] as f32, 120.0),
+                bar(world.grievance[Faction::FreeState.index()] as f32, 150.0),
                 world.grievance[Faction::FreeState.index()],
-                bar(world.grievance[Faction::ProSlavery.index()] as f32, 120.0),
+                bar(world.grievance[Faction::ProSlavery.index()] as f32, 150.0),
                 world.grievance[Faction::ProSlavery.index()],
                 if world.pacified_until.is_some_and(|d| world.day < d) {
                     "\nFederal dragoons patrol the roads"
