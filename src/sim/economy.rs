@@ -332,8 +332,13 @@ pub fn act(world: &mut World, family: FamilyId, choice: Choice) -> bool {
             let Some(lender) = storekeeper(world) else {
                 return false;
             };
+            let limit = if world.credit_crunch {
+                CREDIT_LIMIT / 2
+            } else {
+                CREDIT_LIMIT
+            };
             let hh = &mut world.families[f].stores;
-            if hh.debt >= CREDIT_LIMIT {
+            if hh.debt >= limit {
                 return false;
             }
             let dollars = 10;

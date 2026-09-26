@@ -32,6 +32,20 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     favor_system(world, ev);
     cruelty_system(world, ev);
     wound_system(world, ev);
+    press_system(world, ev);
+}
+
+/// A paper's version of a local event reaches its readers.
+fn press_system(world: &mut World, ev: &WorldEvent) {
+    if let EventKind::Headline {
+        paper,
+        about: Some(about),
+        blamed: Some(blamed),
+        ..
+    } = ev.kind
+    {
+        super::history::read(world, ev.id, paper, about, blamed);
+    }
 }
 
 fn is_stakeholder(world: &World, holder: NpcId, victim: NpcId) -> bool {
@@ -443,6 +457,10 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
     if zealot {
         p *= 1.5;
     }
+    // Dragoons on the roads: people think twice.
+    if world.pacified_until.is_some_and(|d| ev.day < d) {
+        p *= 0.3;
+    }
     if !world.rng.chance(p.clamp(0.02, 0.85)) {
         return;
     }
@@ -451,7 +469,10 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
         .memories
         .iter()
         .any(|m| m.weight == 255 && m.believed == Suspect::Person(target));
-    let method = if grieving || hothead || (world.feud_between(hf, tf) && world.rng.chance(0.3)) {
+    let method = if (grieving && world.rng.chance(0.6))
+        || (hothead && world.rng.chance(0.4))
+        || (world.feud_between(hf, tf) && world.rng.chance(0.15))
+    {
         Retaliation::Ambush
     } else {
         Retaliation::Arson
@@ -520,7 +541,7 @@ fn retaliation_system(world: &mut World, ev: &WorldEvent) {
             let kill = if character::is(a, Archetype::Bushwhacker) {
                 1.0
             } else {
-                (0.35 + 0.55 * a.body.marksmanship - 0.25 * t.body.alertness) * a.hidden.luck
+                (0.2 + 0.5 * a.body.marksmanship - 0.3 * t.body.alertness) * a.hidden.luck
             };
             if world.rng.chance(kill.clamp(0.1, 1.0)) {
                 EventKind::Death {

@@ -54,6 +54,8 @@ pub enum Source {
     Bystander,
     /// Heard it from someone.
     Told(NpcId),
+    /// Read it in the paper. Printed words stick (ext. §14: newspapers freeze a version).
+    Newspaper(super::history::Paper),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -183,6 +185,17 @@ pub enum EventKind {
         creditor: NpcId,
         debtor: NpcId,
         complied: bool,
+    },
+    /// Something happened out in the Territory or back in the States.
+    History {
+        index: usize,
+    },
+    /// A paper went to press with its version of the week.
+    Headline {
+        paper: super::history::Paper,
+        about: Option<EventId>,
+        blamed: Option<Suspect>,
+        history: Option<usize>,
     },
     /// A big move in a price at the store.
     PriceMove {

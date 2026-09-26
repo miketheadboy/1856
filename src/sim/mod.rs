@@ -9,6 +9,7 @@ pub mod character;
 pub mod chronicle;
 pub mod economy;
 pub mod events;
+pub mod history;
 pub mod market;
 pub mod psyche;
 pub mod rng;

@@ -94,6 +94,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Source::Victim => "blames".into(),
                 Source::Bystander => "suspects".into(),
                 Source::Told(t) => format!("heard from {} and blames", who(world, t)),
+                Source::Newspaper(p) => format!("read in the {} and blames", p.name()),
             };
             let stray = blamed == Suspect::Accident
                 && matches!(world.events[about as usize].kind, EventKind::Theft { .. });
@@ -254,6 +255,37 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 }
                 Cruelty::FoulWell => format!("[CRUELTY] The well at {} was fouled{}", place, truth),
             }
+        }
+        EventKind::History { index } => {
+            format!("[NEWS] {}", super::history::TIMELINE[index].title)
+        }
+        EventKind::Headline {
+            paper,
+            about,
+            blamed,
+            history,
+        } => {
+            let free = paper.faction() == super::world::Faction::FreeState;
+            let text = if let Some(i) = history {
+                let m = &super::history::TIMELINE[i];
+                (if free { m.free_state } else { m.pro_slavery }).to_string()
+            } else if let Some(about) = about {
+                let what = debug_line(world, &world.events[about as usize], false);
+                let what = what
+                    .split_once("] ")
+                    .map(|(_, r)| r)
+                    .unwrap_or(&what)
+                    .to_string();
+                let villain = match blamed {
+                    Some(Suspect::Person(p)) => who(world, p),
+                    _ if free => "border ruffians".to_string(),
+                    _ => "abolitionists".to_string(),
+                };
+                format!("{}. The work of {}.", what, villain)
+            } else {
+                String::new()
+            };
+            format!("[PRESS] {}: \"{}\"", paper.name(), text)
         }
         EventKind::PriceMove {
             good,

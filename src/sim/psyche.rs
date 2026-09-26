@@ -57,6 +57,8 @@ pub struct Temperament {
     pub skepticism: f32,
     /// Faction loyalty: takes its grievances personally, won't sign.
     pub loyalty: f32,
+    /// Reads the papers, and believes what they print.
+    pub literacy: f32,
 }
 
 /// Body and hands. All 0..1.
@@ -116,6 +118,8 @@ impl Temperament {
             sociability: rng.unit(),
             skepticism: rng.unit(),
             loyalty: rng.unit(),
+            // New Englanders came with schooling; Missourians less often.
+            literacy: rng.unit(),
         }
     }
 }

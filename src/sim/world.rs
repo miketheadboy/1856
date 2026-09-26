@@ -8,6 +8,7 @@ use super::economy::{self, Choice, Household};
 use super::events::{
     EVENTS_PER_TICK, EventId, EventKind, FireCause, MAX_CASCADE_DEPTH, Source, Suspect, WorldEvent,
 };
+use super::history;
 use super::market::{self, Good, Market};
 use super::psyche::{self, Body, Emotions, Ideology, Temperament};
 use super::rng::SimRng;
@@ -189,6 +190,12 @@ pub struct World {
     /// The storekeeper is waiting on your answer (§10.2).
     pub pending_favor: Option<NpcId>,
     pub market: Market,
+    /// The papers, and which history the county has heard.
+    pub press: history::Press,
+    /// Federal troops keep the peace until this day (negative feedback).
+    pub pacified_until: Option<Day>,
+    /// After the Panic of 1857, credit is tight.
+    pub credit_crunch: bool,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -353,6 +360,7 @@ impl World {
                 sociability: 0.5,
                 skepticism: 0.5,
                 loyalty: 0.5,
+                literacy: 0.9,
             },
             body: Body {
                 strength: 0.6,
@@ -438,6 +446,9 @@ impl World {
             autopilot_player: true,
             pending_favor: None,
             market: Market::new(),
+            press: history::Press::default(),
+            pacified_until: None,
+            credit_crunch: false,
         };
 
         // Winter stores: most families went into 1855 short.
@@ -624,6 +635,7 @@ impl World {
         self.rebuild_barns();
         self.release_scheduled();
         self.natural_fires();
+        history::daily(self);
         market::daily(self);
         economy::daily(self);
         psyche::daily(self);
