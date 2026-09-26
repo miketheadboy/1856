@@ -28,6 +28,8 @@ pub enum Terrain {
     Town,
     /// Treaty land.
     Reserve(NationId),
+    /// Timber cut down to the stumps: open ground, poor cover, no rails.
+    Stumps,
 }
 
 impl Terrain {
@@ -35,6 +37,7 @@ impl Terrain {
     pub fn visibility(self) -> f32 {
         match self {
             Terrain::Prairie | Terrain::Road => 1.2,
+            Terrain::Stumps => 1.0,
             Terrain::Town => 1.4,
             Terrain::Timber | Terrain::River => 0.5,
             Terrain::Reserve(_) => 0.8,
@@ -46,6 +49,7 @@ impl Terrain {
         match self {
             Terrain::Prairie => 1.4,
             Terrain::Timber => 0.7,
+            Terrain::Stumps => 0.9,
             Terrain::Road | Terrain::Town => 0.5,
             Terrain::River => 0.0,
             Terrain::Reserve(_) => 1.0,
@@ -60,6 +64,7 @@ impl Terrain {
             Terrain::Road => '=',
             Terrain::Town => '#',
             Terrain::Reserve(_) => ',',
+            Terrain::Stumps => '_',
         }
     }
 }
@@ -245,9 +250,16 @@ fn kaw_y(x: f32) -> f32 {
     KAW.last().map_or(3.0, |p| p.1)
 }
 
+/// Loads of timber a wooded half-mile holds before it's stumps.
+pub const TIMBER_LOADS: u16 = 20;
+
 #[derive(Clone, Debug)]
 pub struct Map {
     tiles: Vec<Terrain>,
+    /// Loads left on each timber tile.
+    timber: Vec<u16>,
+    /// Day each tile last burned, for scorch marks and regrowth.
+    scorched: Vec<Option<u32>>,
 }
 
 impl Map {
@@ -258,7 +270,63 @@ impl Map {
                 tiles.push(classify(to_miles((tx, ty))));
             }
         }
-        Self { tiles }
+        let n = tiles.len();
+        Self {
+            tiles,
+            timber: vec![TIMBER_LOADS; n],
+            scorched: vec![None; n],
+        }
+    }
+
+    fn index(t: (i32, i32)) -> usize {
+        let x = t.0.clamp(0, WIDTH - 1);
+        let y = t.1.clamp(0, HEIGHT - 1);
+        (y * WIDTH + x) as usize
+    }
+
+    /// The nearest standing timber off treaty land, if any is left.
+    pub fn nearest_timber(&self, from: (i32, i32)) -> Option<(i32, i32)> {
+        let mut best: Option<((i32, i32), i32)> = None;
+        for ty in 0..HEIGHT {
+            for tx in 0..WIDTH {
+                if self.at((tx, ty)) == Terrain::Timber {
+                    let d = (tx - from.0).pow(2) + (ty - from.1).pow(2);
+                    if best.is_none_or(|b| d < b.1) {
+                        best = Some(((tx, ty), d));
+                    }
+                }
+            }
+        }
+        best.map(|b| b.0)
+    }
+
+    /// Take a load of wood off a tile. The last load leaves stumps.
+    /// Returns whether there was wood to take.
+    pub fn cut(&mut self, t: (i32, i32)) -> bool {
+        let i = Self::index(t);
+        if self.tiles[i] != Terrain::Timber || self.timber[i] == 0 {
+            return false;
+        }
+        self.timber[i] -= 1;
+        if self.timber[i] == 0 {
+            self.tiles[i] = Terrain::Stumps;
+        }
+        true
+    }
+
+    pub fn loads_left(&self, t: (i32, i32)) -> u16 {
+        self.timber[Self::index(t)]
+    }
+
+    pub fn scorch(&mut self, t: (i32, i32), day: u32) {
+        let i = Self::index(t);
+        if self.tiles[i] != Terrain::River {
+            self.scorched[i] = Some(day);
+        }
+    }
+
+    pub fn scorched_on(&self, t: (i32, i32)) -> Option<u32> {
+        self.scorched[Self::index(t)]
     }
 
     pub fn at(&self, t: (i32, i32)) -> Terrain {

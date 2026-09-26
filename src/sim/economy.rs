@@ -60,6 +60,8 @@ pub struct Household {
     pub work: super::farmwork::Farm,
     /// The store won't carry this family until then (a scandal, `legacy`).
     pub credit_cut_until: Option<Day>,
+    /// Well, smokehouse, crib, cellar, rail fence (`homestead`).
+    pub improvements: super::homestead::Improvements,
 }
 
 impl Household {
@@ -118,7 +120,14 @@ pub fn daily(world: &mut World) {
         if winter {
             // Quilts from a winter's bees keep a house warmer.
             let quilts = world.gatherings.quilts(family).min(3) as f32;
+            let cellar =
+                if super::homestead::has(world, family, super::homestead::Improvement::Cellar) {
+                    0.1
+                } else {
+                    0.0
+                };
             need += 0.3 * m * world.winter_severity * (1.0 - 0.1 * quilts);
+            need *= 1.0 - cellar;
         }
         if weather.blizzard {
             need += 0.4 * m;
@@ -304,8 +313,15 @@ fn buy(world: &mut World, family: FamilyId) -> bool {
 /// Meat from a butchered animal: half of it spoils without salt.
 fn butcher(world: &mut World, family: FamilyId, meat: f32) {
     let salted = market::consume(world, family, Good::Salt);
+    let smoked = super::homestead::has(world, family, super::homestead::Improvement::Smokehouse);
     let hh = &mut world.families[family as usize].stores;
-    hh.food += if salted { meat } else { meat * 0.5 };
+    hh.food += if salted {
+        meat
+    } else if smoked {
+        meat * 0.8
+    } else {
+        meat * 0.5
+    };
     hh.goods[Good::Hides.index()] += 1.0;
 }
 
@@ -508,17 +524,24 @@ fn steal(world: &mut World, family: FamilyId) -> bool {
 
 pub fn steal_from(world: &mut World, thief: NpcId, victim_family: FamilyId, victim: NpcId) {
     let thief_family = world.npc(thief).family as usize;
+    // Corn in a crib is off the ground and harder to carry off quietly.
+    let cribbed = super::homestead::has(world, victim_family, super::homestead::Improvement::Crib);
+    let sack = if cribbed {
+        GRAIN_SACK * 0.5
+    } else {
+        GRAIN_SACK
+    };
     let v = &mut world.families[victim_family as usize].stores;
     let loot = if v.cattle > 0 {
         v.cattle -= 1;
         Loot::Cow
     } else {
-        v.food = (v.food - GRAIN_SACK).max(0.0);
+        v.food = (v.food - sack).max(0.0);
         Loot::Grain
     };
     world.families[thief_family].stores.food += match loot {
         Loot::Cow => COW_FOOD,
-        Loot::Grain => GRAIN_SACK * (0.5 + world.npc(thief).body.strength),
+        Loot::Grain => sack * (0.5 + world.npc(thief).body.strength),
     };
     world.npc_mut(thief).alibi = None;
     world.emit_root(
@@ -557,7 +580,9 @@ fn breed(world: &mut World) {
     for f in &mut world.families {
         let hh = &mut f.stores;
         if hh.cattle >= 2 {
-            hh.cattle += (hh.cattle / 3).max(1);
+            // A burned-off pasture greens early: a calf more.
+            let burned = u32::from(hh.improvements.burned_pasture);
+            hh.cattle += (hh.cattle / 3).max(1) + burned;
         }
     }
 }

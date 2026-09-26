@@ -72,6 +72,8 @@ fn fire_system(world: &mut World, ev: &WorldEvent) {
     };
     let family = world.npc(owner).family;
     let day = ev.day;
+    let farm = world.families[family as usize].farm;
+    world.map.scorch(farm, day.0);
     let f = &mut world.families[family as usize];
     f.barn_standing = false;
     f.barn_burned_on = Some(day);

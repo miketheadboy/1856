@@ -148,8 +148,12 @@ pub fn work(world: &mut World, family: FamilyId, hands: f32) -> Task {
                 let hh = &mut world.families[f].stores;
                 hh.cattle -= 1;
                 hh.work.butchered = true;
+                let smoked =
+                    hh.improvements.built & super::homestead::Improvement::Smokehouse.bit() != 0;
                 hh.food += if salted {
                     BUTCHER_FOOD
+                } else if smoked {
+                    BUTCHER_FOOD * 0.8
                 } else {
                     BUTCHER_FOOD * 0.5
                 };
@@ -162,6 +166,12 @@ pub fn work(world: &mut World, family: FamilyId, hands: f32) -> Task {
         }
     }
     task
+}
+
+/// Mend fence whatever the season asks: a day on the rails.
+pub fn mend(world: &mut World, family: FamilyId, hands: f32) {
+    let w = &mut world.families[family as usize].stores.work;
+    w.fences = (w.fences + 0.1 * hands).min(1.0);
 }
 
 /// Yield multiplier for when the corn went in.
@@ -189,8 +199,11 @@ pub fn daily(world: &mut World) {
             continue;
         }
         // Fence rots; stock pushes through.
+        let rails = world.families[f].stores.improvements.built
+            & super::homestead::Improvement::RailFence.bit()
+            != 0;
         let w = &mut world.families[f].stores.work;
-        w.fences = (w.fences - 0.004).max(0.0);
+        w.fences = (w.fences - if rails { 0.002 } else { 0.004 }).max(0.0);
 
         // Neighbors work their own places; the player works theirs by hand.
         let manual = family == 0 && !world.autopilot_player;

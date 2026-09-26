@@ -18,6 +18,7 @@ pub mod farmwork;
 pub mod geography;
 pub mod ghosts;
 pub mod history;
+pub mod homestead;
 pub mod institutions;
 pub mod intrigue;
 pub mod land;

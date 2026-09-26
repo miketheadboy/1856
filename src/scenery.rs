@@ -115,6 +115,8 @@ pub fn terrain_color(t: Terrain, tile: (i32, i32), world: &World) -> Color {
         Terrain::Road if snow => (0.80, 0.78, 0.74),
         Terrain::Road => (0.55, 0.44, 0.32),
         Terrain::Town => (0.85, 0.81, 0.72),
+        Terrain::Stumps if snow => (0.78, 0.78, 0.76),
+        Terrain::Stumps => (0.50, 0.44, 0.32),
         _ if snow => match t {
             Terrain::Timber => (0.52, 0.56, 0.54),
             _ => (0.90, 0.91, 0.92),
@@ -141,6 +143,18 @@ pub fn terrain_color(t: Terrain, tile: (i32, i32), world: &World) -> Color {
                 _ => base,
             }
         }
+    };
+    // Burned ground: black, then greening back over a couple of months.
+    let (r, g, b) = match world.map.scorched_on(tile) {
+        Some(on) if t != Terrain::River && day.0 < on + 60 => {
+            let k = (day.0 - on) as f32 / 60.0;
+            (
+                0.12 + (r - 0.12) * k,
+                0.10 + (g - 0.10) * k,
+                0.08 + (b - 0.08) * k,
+            )
+        }
+        _ => (r, g, b),
     };
     let j = jitter(tile);
     let j = if t == Terrain::River { j * 0.5 } else { j };

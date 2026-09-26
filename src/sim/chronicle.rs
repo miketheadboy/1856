@@ -823,6 +823,19 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             good.unit(),
             good.label()
         ),
+        EventKind::Improved { family, what } => format!(
+            "[CLAIM] {} put up a {}",
+            if family == 0 {
+                "You".to_string()
+            } else {
+                format!("The {}", plural(world.families[family as usize].surname))
+            },
+            what.label()
+        ),
+        EventKind::StandCut { family, .. } => format!(
+            "[TIMBER] The stand nearest the {} place is stumps now",
+            world.families[family as usize].surname
+        ),
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),

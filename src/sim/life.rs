@@ -130,6 +130,14 @@ pub enum Activity {
     Answer(super::railroad::Answer),
     /// Take who you're hiding north yourself.
     Guide,
+    /// A day on the fence rails, whatever else is due.
+    Mend,
+    /// A load of timber off the creek bottoms.
+    CutTimber,
+    /// Burn off the pasture (March and April).
+    BurnPasture,
+    /// A day's work on a well, smokehouse, crib, cellar or rail fence.
+    Improve(super::homestead::Improvement),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -438,6 +446,27 @@ pub fn act(world: &mut World, what: Activity) -> bool {
                 }
                 _ => false,
             }
+        }
+        Activity::Mend => {
+            let hands = 0.7 + 0.8 * world.life.skill(Skill::Carpentry);
+            super::farmwork::mend(world, 0, hands);
+            world.life.learn(Skill::Carpentry, 1.0);
+            true
+        }
+        Activity::CutTimber => {
+            let got = super::homestead::cut_timber(world, 0);
+            world.life.learn(Skill::Carpentry, 1.0);
+            world.life.cheer(-1.0);
+            got > 0.0 || world.families[0].stores.goods[Good::Timber.index()] > 0.0
+        }
+        Activity::BurnPasture => super::homestead::burn_pasture(world, 0),
+        Activity::Improve(imp) => {
+            let hands = 0.7 + 0.8 * world.life.skill(Skill::Carpentry);
+            let ok = super::homestead::build(world, 0, imp, hands);
+            if ok {
+                world.life.learn(Skill::Carpentry, 2.0);
+            }
+            ok
         }
         Activity::Trap => trap(world),
         Activity::Camp => camp(world),

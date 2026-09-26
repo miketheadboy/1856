@@ -493,6 +493,16 @@ pub enum EventKind {
         good: super::market::Good,
         units: u16,
     },
+    /// A household finished building something.
+    Improved {
+        family: FamilyId,
+        what: super::homestead::Improvement,
+    },
+    /// A timber stand cut to the last load.
+    StandCut {
+        family: FamilyId,
+        tile: (i32, i32),
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

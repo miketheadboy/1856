@@ -772,6 +772,7 @@ impl World {
         super::mortality::daily(self);
         super::family::daily(self);
         super::farmwork::daily(self);
+        super::homestead::daily(self);
         super::mail::daily(self);
         super::law::daily(self);
         super::bees::daily(self);
@@ -998,6 +999,7 @@ impl World {
         super::law::monthly(self);
         super::legacy::monthly(self);
         super::land::monthly(self);
+        super::homestead::monthly(self);
         super::civic::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);
