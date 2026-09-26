@@ -476,6 +476,10 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
     if world.ghosts.oath_against(holder, target) {
         p += 0.3;
     }
+    // Knowing your own blood was in the wrong takes the fight out of you.
+    if super::ghosts::ashamed(world, holder) {
+        p *= 0.5;
+    }
     // Dragoons on the roads: people think twice.
     if world.pacified_until.is_some_and(|d| ev.day < d) {
         p *= 0.3;

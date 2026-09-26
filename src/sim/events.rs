@@ -266,6 +266,17 @@ pub enum EventKind {
         holder: NpcId,
         target: NpcId,
     },
+    /// Kin who believe the dead had it coming: no oath, only shame.
+    ShameCarried {
+        holder: NpcId,
+        over: NpcId,
+    },
+    /// A child who carried shame comes of age, and it turns their life.
+    ShameWakes {
+        holder: NpcId,
+        over: NpcId,
+        turn: super::ghosts::ShameTurn,
+    },
     /// Someone saw the dead, out by the place it happened.
     SpiritSeen {
         witness: NpcId,

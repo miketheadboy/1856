@@ -41,10 +41,31 @@ pub struct Haunt {
     pub sightings: u32,
 }
 
+/// Kin who believe the dead had it coming don't swear. They carry it.
+#[derive(Clone, Debug)]
+pub struct Shame {
+    pub holder: NpcId,
+    /// The kinsman who deserved it (in the holder's eyes).
+    pub over: NpcId,
+    /// The family the dead man wronged.
+    pub wronged: u32,
+    pub woke: bool,
+}
+
+/// Which way shame turns a life when it wakes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShameTurn {
+    /// Piety and generosity; drawn to the family their kin wronged.
+    Atonement,
+    /// Temper and drink; the loafer's road.
+    Ruin,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Ghosts {
     pub oaths: Vec<Oath>,
     pub haunts: Vec<Haunt>,
+    pub shames: Vec<Shame>,
 }
 
 impl Ghosts {
@@ -104,6 +125,43 @@ fn swear(world: &mut World, ev: &WorldEvent, holder: NpcId, about: EventId, targ
         return;
     }
     let child = LifeStage::of(h.age) == LifeStage::Child;
+
+    // Did he deserve it? Not by the truth: by what the kin believes the dead
+    // man did to the killer or the killer's family.
+    let killer_family = world.npc(target).family;
+    let deserved = h.memories.iter().any(|m| {
+        m.believed == Suspect::Person(victim)
+            && m.confidence >= 40
+            && super::attribution::victim_of(world, m.event)
+                .is_some_and(|v| world.npc(v).family == killer_family)
+    });
+    if deserved {
+        if world
+            .ghosts
+            .shames
+            .iter()
+            .any(|s| s.holder == holder && s.over == victim)
+        {
+            return;
+        }
+        world.ghosts.shames.push(Shame {
+            holder,
+            over: victim,
+            wronged: killer_family,
+            woke: !child,
+        });
+        // "He had it coming." The grudge against the killer softens.
+        world.adjust_opinion(holder, target, 40);
+        world.emit_child(
+            ev,
+            EventKind::ShameCarried {
+                holder,
+                over: victim,
+            },
+        );
+        return;
+    }
+
     world.ghosts.oaths.push(Oath {
         holder,
         target,
@@ -191,6 +249,7 @@ pub fn yearly(world: &mut World) {
     for n in world.npcs.iter_mut().filter(|n| n.alive) {
         n.age = n.age.saturating_add(1);
     }
+    wake_shame(world);
     for i in 0..world.ghosts.oaths.len() {
         let o = world.ghosts.oaths[i].clone();
         if o.done || o.woke || world.npc(o.holder).age < COMING_OF_AGE {
@@ -225,6 +284,59 @@ pub fn yearly(world: &mut World) {
             id,
         );
     }
+}
+
+/// Shame that comes of age turns a life one way or the other, by temperament.
+fn wake_shame(world: &mut World) {
+    for i in 0..world.ghosts.shames.len() {
+        let s = world.ghosts.shames[i].clone();
+        let n = world.npc(s.holder);
+        if s.woke || !n.alive || n.age < COMING_OF_AGE {
+            continue;
+        }
+        let devout = n.temperament.piety + n.temperament.generosity > 1.0;
+        world.ghosts.shames[i].woke = true;
+        let turn = if devout {
+            ShameTurn::Atonement
+        } else {
+            ShameTurn::Ruin
+        };
+        let wronged: Vec<NpcId> = world
+            .living()
+            .filter(|w| w.family == s.wronged)
+            .map(|w| w.id)
+            .collect();
+        let n = world.npc_mut(s.holder);
+        match turn {
+            ShameTurn::Atonement => {
+                n.temperament.piety = (n.temperament.piety + 0.3).min(1.0);
+                n.temperament.generosity = (n.temperament.generosity + 0.3).min(1.0);
+                n.temperament.temper = (n.temperament.temper - 0.2).max(0.0);
+                for w in wronged {
+                    world.adjust_opinion(s.holder, w, 30);
+                    world.adjust_opinion(w, s.holder, 15);
+                }
+            }
+            ShameTurn::Ruin => {
+                n.temperament.temper = (n.temperament.temper + 0.3).min(1.0);
+                n.temperament.piety = (n.temperament.piety - 0.3).max(0.0);
+                n.emotions.grief = (n.emotions.grief + 30.0).min(100.0);
+            }
+        }
+        world.emit_root(
+            EventKind::ShameWakes {
+                holder: s.holder,
+                over: s.over,
+                turn,
+            },
+            None,
+        );
+    }
+}
+
+/// Carrying shame damps the appetite for revenge.
+pub fn ashamed(world: &World, id: NpcId) -> bool {
+    world.ghosts.shames.iter().any(|s| s.holder == id)
 }
 
 /// Is this haunt still restless? It rests when the family knows the truth, or
@@ -406,6 +518,70 @@ mod tests {
         }
         daily(&mut w);
         assert!(!w.ghosts.haunts[0].restless);
+    }
+
+    /// If the child believes Pa deserved it, there's no oath: only shame.
+    #[test]
+    fn no_vengeance_if_he_had_it_coming() {
+        use super::super::world::MemoryRef;
+        let mut w = World::new(8);
+        let (parent, child) = (1..w.families.len() as u32)
+            .find_map(|f| {
+                let kin: Vec<_> = w.living().filter(|n| n.family == f).collect();
+                Some((
+                    kin.iter().find(|n| n.age >= 16)?.id,
+                    kin.iter().find(|n| n.age < 16)?.id,
+                ))
+            })
+            .unwrap();
+        let killer = w
+            .living()
+            .find(|n| n.family != w.npc(parent).family && n.id != 0 && n.age >= 16)
+            .unwrap()
+            .id;
+        // The child believes Pa burned the killer's barn.
+        let fire = w.emit_root(
+            EventKind::Fire {
+                owner: killer,
+                cause: super::super::FireCause::Hearth,
+                spread_from: None,
+            },
+            None,
+        );
+        let today = w.day;
+        w.npc_mut(child).remember(MemoryRef {
+            event: fire,
+            believed: Suspect::Person(parent),
+            confidence: 80,
+            source: Source::Told(killer),
+            day: today,
+            weight: 100,
+        });
+        let death = w.emit_root(
+            EventKind::Death {
+                victim: parent,
+                killer: Some(killer),
+            },
+            None,
+        );
+        let belief = w.emit_root(
+            EventKind::Belief {
+                holder: child,
+                about: death,
+                blamed: Suspect::Person(killer),
+                confidence: 95,
+                source: Source::Witnessed,
+                reason: "saw it",
+            },
+            None,
+        );
+        let ev = w.events[belief as usize].clone();
+        on_event(&mut w, &ev);
+        assert!(
+            !w.ghosts.oath_against(child, killer),
+            "no oath if he had it coming"
+        );
+        assert!(ashamed(&w, child));
     }
 
     #[test]

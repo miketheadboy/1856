@@ -385,6 +385,24 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             world.npc(holder).age,
             who(world, target)
         ),
+        EventKind::ShameCarried { holder, over } => format!(
+            "[SHAME] {}, {}, buried {} and said nothing against the man who did it",
+            capitalize(&who(world, holder)),
+            world.npc(holder).age,
+            who(world, over)
+        ),
+        EventKind::ShameWakes { holder, over, turn } => match turn {
+            super::ghosts::ShameTurn::Atonement => format!(
+                "[SHAME] {} is grown now, and tries to make right what {} did",
+                capitalize(&who(world, holder)),
+                who(world, over)
+            ),
+            super::ghosts::ShameTurn::Ruin => format!(
+                "[SHAME] {} is grown now, and drinks to forget what {} did",
+                capitalize(&who(world, holder)),
+                who(world, over)
+            ),
+        },
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),
