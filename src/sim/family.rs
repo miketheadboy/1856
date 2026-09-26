@@ -92,7 +92,11 @@ fn weight(ev: &WorldEvent) -> Option<(NpcId, f32)> {
 
 pub fn on_event(world: &mut World, ev: &WorldEvent) {
     match ev.kind {
-        EventKind::WhereWereYou { kin, errand, missed } => {
+        EventKind::WhereWereYou {
+            kin,
+            errand,
+            missed,
+        } => {
             let Some((_, w)) = weight(&world.events[missed as usize]) else {
                 return;
             };

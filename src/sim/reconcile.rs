@@ -178,7 +178,15 @@ fn plan_raising(world: &mut World, ev: &WorldEvent, owner: NpcId) {
         }
     }
     if hands >= 2 || rival.is_some() {
-        world.schedule(RAISING_AFTER, EventKind::BarnRaising { owner, hands, rival }, ev.id);
+        world.schedule(
+            RAISING_AFTER,
+            EventKind::BarnRaising {
+                owner,
+                hands,
+                rival,
+            },
+            ev.id,
+        );
     }
 }
 

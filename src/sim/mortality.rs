@@ -32,7 +32,11 @@ pub fn daily_risk(world: &World, id: NpcId) -> f32 {
     let hungry = if f.stores.hungry_days > 0 { 2.0 } else { 1.0 };
     let exposed = if f.barn_standing { 1.0 } else { 1.3 };
     let weak = 1.0 + (100 - n.health.clamp(0, 100)) as f32 / 100.0;
-    annual_risk(n.age) * season_factor(world.day.month()) * n.body.frailty() * hungry * exposed
+    annual_risk(n.age)
+        * season_factor(world.day.month())
+        * n.body.frailty()
+        * hungry
+        * exposed
         * weak
         / 365.0
 }
@@ -97,9 +101,9 @@ mod tests {
             dead += start
                 .iter()
                 .filter(|&&c| {
-                    w.events.iter().any(|e| {
-                        matches!(e.kind, EventKind::Perished { victim, .. } if victim == c)
-                    })
+                    w.events.iter().any(
+                        |e| matches!(e.kind, EventKind::Perished { victim, .. } if victim == c),
+                    )
                 })
                 .count();
         }

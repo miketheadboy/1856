@@ -413,7 +413,11 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 super::reconcile::Mercy::Weariness => "too tired of it",
             }
         ),
-        EventKind::BarnRaising { owner, hands, rival } => format!(
+        EventKind::BarnRaising {
+            owner,
+            hands,
+            rival,
+        } => format!(
             "[RAISING] {} neighbors raised the {} barn in a day{}",
             hands,
             surname(world, owner),
