@@ -3,6 +3,7 @@
 
 use bevy::prelude::*;
 use bleeding_kansas::sim::chronicle::{self, suspect_label};
+use bleeding_kansas::sim::psyche::{self, Condition};
 use bleeding_kansas::sim::world::{FamilyId, NpcId, PLAYER, World};
 
 const SEED: u64 = 1856;
@@ -334,7 +335,10 @@ fn draw_npcs(
             Color::srgb(1.0, 1.0, 0.6)
         } else if s.id == PLAYER {
             Color::srgb(0.95, 0.95, 0.95)
-        } else if npc.mood < 20 {
+        } else if matches!(
+            psyche::condition(world, s.id),
+            Condition::Starving | Condition::Grieving | Condition::Wounded
+        ) {
             Color::srgb(0.88, 0.34, 0.22)
         } else {
             // Opinion of you, from cold blue to warm tan.
@@ -445,10 +449,11 @@ fn update_panel(
                     })
                     .unwrap_or_default();
                 plain(&format!(
-                    "{}  ({})\nMood: {}   Opinion of you: {}{}",
+                    "{}  ({})\n{} - health {}   Opinion of you: {}{}",
                     npc.name,
                     npc.faction.label(),
-                    npc.mood,
+                    psyche::condition(world, id).label(),
+                    npc.health,
                     world.opinion(id, PLAYER),
                     belief
                 ))
