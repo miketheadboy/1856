@@ -116,6 +116,7 @@ enum Action {
     Court,
     Baptize,
     Sue,
+    BuyClaim,
 }
 
 fn main() {
@@ -472,6 +473,9 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                         "MEETING: SOUTH",
                         brown,
                     ),
+                    (Action::Do(Activity::BuyLot), "BUY TOWN LOT", blue),
+                    (Action::Do(Activity::SellLot), "SELL TOWN LOT", blue),
+                    (Action::BuyClaim, "BUY THEIR CLAIM", brown),
                     (Action::Leave(Errand::Buffalo), "LEAVE A WHILE", gray),
                 ],
             );
@@ -643,6 +647,10 @@ fn handle_actions(
             }
             (Action::Baptize, Some(t)) => {
                 w.player_do(Activity::Baptize(t));
+            }
+            (Action::BuyClaim, Some(t)) => {
+                let f = w.npc(t).family;
+                w.player_do(Activity::BuyClaim(f));
             }
             (Action::Sue, Some(t)) => {
                 w.player_do(Activity::Sue(t));
@@ -926,6 +934,10 @@ fn your_life(world: &World) -> String {
         s.push_str(&top.join(", "));
         s.push('\n');
     }
+    s.push_str(&format!(
+        "Lawrence lots ${:.0}   you hold {}\n",
+        world.land.lot_price, world.land.lots
+    ));
     let paths = life::paths(world);
     if !paths.is_empty() {
         s.push_str(&format!("They call you: {}\n", paths.join(", ")));

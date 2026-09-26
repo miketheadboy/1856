@@ -47,11 +47,12 @@ Sim modules (`src/sim/`):
 | `family` | kin and absence: errands (buffalo, fishing, courting, town, drinking) take the player away; harm at home while away costs kin's regard |
 | `farmwork` | the farm year: plow, plant (almanac folk wait for the moon and plant late), hay, picking corn before December, butchering, fences; strays feed attribution; short hay kills stock |
 | `life` | the player's days: one activity a day (chores, fish, roam, trap, camp, visit, court, drink, preach, baptize, speech, build, file a claim, study, write home), eight skills that grow by doing, spirits, Jones-style goals, emergent paths (preacher, souse, rake, silver tongue, vagabond, pillar...) |
-| `romance` | couples, courtship, seduction, affairs, scandal, marriages that make in-laws (and end feuds) |
+| `romance` | couples, courtship, seduction, affairs, scandal, marriages that make in-laws (and end feuds), births (and deaths in childbed) |
 | `civic` | county projects (schoolhouse, bridge, lyceum), the Lecompton land office and claim jumpers, festivals |
 | `mail` | the Lawrence post office on Wednesdays (not through a blockade): money, deaths back home, kin coming out (new household members); the unlettered need a neighbor to read, who then knows their business |
 | `law` | the pro-slavery justice of the peace and lawsuits over jumped claims; the 1855–57 elections (Topeka votes, Missourians at territorial polls, votes sold at the store, Walker's rejected returns); militia musters (Wakarusa, Jones's posse, Franklin, Hickory Point) with shirkers noticed and men shot |
 | `bees` | husking bees (shuck the host's corn, the red ear), quilting bees (quilts cut winter need), spelling bees, singing school (courting); the union meeting that mixes both sides until tension splits it North and South |
+| `land` | Lawrence town lots through the 1856 emigration, the Sack, the 1857 boom and the Panic; buying a broken family's relinquishment (they depart for the States) |
 | `legacy` | the papers write you up (readers take the paper's view of you); a scandal shuts the store's book; your children drift toward your path and, near grown, take after you or rebel |
 | `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |

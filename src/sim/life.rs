@@ -114,6 +114,10 @@ pub enum Activity {
     Church {
         north: bool,
     },
+    BuyLot,
+    SellLot,
+    /// Buy out a broken family's relinquishment.
+    BuyClaim(super::world::FamilyId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -229,7 +233,7 @@ impl Life {
 
 /// Jones-style goals: money, name, spirits, learning. 0..1 each.
 pub fn goals(world: &World) -> [(&'static str, f32); 4] {
-    let cash = world.families[0].stores.cash as f32;
+    let cash = world.families[0].stores.cash as f32 + super::land::holdings(world);
     let standing = psyche::reputation(world, PLAYER);
     let learning: f32 = Skill::ALL.iter().map(|&s| world.life.skill(s)).sum();
     [
@@ -271,6 +275,9 @@ pub fn paths(world: &World) -> Vec<&'static str> {
     }
     if psyche::reputation(world, PLAYER) >= 25.0 {
         p.push("big shot");
+    }
+    if world.land.lots >= 3 || world.land.claims_bought > 0 {
+        p.push("land speculator");
     }
     if l.built >= 20 {
         p.push("pillar of the community");
@@ -369,6 +376,25 @@ pub fn act(world: &mut World, what: Activity) -> bool {
                 super::bees::Side::South
             };
             super::bees::choose(world, side)
+        }
+        Activity::BuyLot | Activity::SellLot => {
+            let ok = if what == Activity::BuyLot {
+                super::land::buy_lot(world)
+            } else {
+                super::land::sell_lot(world)
+            };
+            if ok {
+                world.life.learn(Skill::Trade, 2.0);
+                family::leave_for(world, Errand::Town, 1);
+            }
+            ok
+        }
+        Activity::BuyClaim(f) => {
+            let ok = super::land::buy_claim(world, f);
+            if ok {
+                world.life.learn(Skill::Trade, 3.0);
+            }
+            ok
         }
         Activity::Trap => trap(world),
         Activity::Camp => camp(world),

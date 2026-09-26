@@ -43,6 +43,7 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::law::on_event(world, ev);
     super::bees::on_event(world, ev);
     super::legacy::on_event(world, ev);
+    super::land::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.

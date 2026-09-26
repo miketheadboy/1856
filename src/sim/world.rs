@@ -98,6 +98,8 @@ pub struct Npc {
     pub hidden: Hidden,
     /// Taken into a nation's kin network; gone from settler society.
     pub adopted_by: Option<NationId>,
+    /// Sold out and went back to the States.
+    pub departed: bool,
 }
 
 impl Npc {
@@ -234,6 +236,8 @@ pub struct World {
     pub law: super::law::Law,
     /// Bees, singing school, and the union meeting.
     pub gatherings: super::bees::Gatherings,
+    /// Town lots and bought-out claims.
+    pub land: super::land::Land,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -391,6 +395,7 @@ impl World {
             wounded: false,
             hidden: Hidden::default(),
             adopted_by: None,
+            departed: false,
         }];
         let mut given: Vec<&str> = GIVEN_NAMES.to_vec();
         for family in families.iter() {
@@ -442,6 +447,7 @@ impl World {
                     wounded: false,
                     hidden,
                     adopted_by: None,
+                    departed: false,
                 });
             }
         }
@@ -481,6 +487,7 @@ impl World {
             civic: super::civic::Civic::default(),
             law: super::law::Law::default(),
             gatherings: super::bees::Gatherings::default(),
+            land: super::land::Land::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -555,6 +562,7 @@ impl World {
             wounded: false,
             hidden,
             adopted_by: None,
+            departed: false,
         });
         id
     }
@@ -621,7 +629,7 @@ impl World {
     pub fn head_of(&self, family: FamilyId) -> Option<NpcId> {
         self.npcs
             .iter()
-            .find(|n| n.family == family && n.alive)
+            .find(|n| n.family == family && n.alive && !n.departed)
             .map(|n| n.id)
     }
 
@@ -629,7 +637,7 @@ impl World {
     pub fn living(&self) -> impl Iterator<Item = &Npc> {
         self.npcs
             .iter()
-            .filter(|n| n.alive && n.adopted_by.is_none())
+            .filter(|n| n.alive && n.adopted_by.is_none() && !n.departed)
     }
 
     pub fn player_alive(&self) -> bool {
@@ -985,6 +993,7 @@ impl World {
         super::romance::monthly(self);
         super::law::monthly(self);
         super::legacy::monthly(self);
+        super::land::monthly(self);
         super::civic::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);

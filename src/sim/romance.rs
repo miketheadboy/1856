@@ -193,6 +193,9 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             }
         }
         EventKind::Marriage { a, b } => marry(world, ev, a, b),
+        EventKind::Born { child, .. } if world.npc(child).family == 0 => {
+            world.life.spirits = (world.life.spirits + 15.0).min(100.0);
+        }
         EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => {
             world
                 .hearts
@@ -318,6 +321,7 @@ pub fn monthly(world: &mut World) {
         })
         .map(|n| n.id)
         .collect();
+    births(world);
     for &s in &single {
         if !world.rng.chance(0.5) {
             continue;
@@ -330,6 +334,47 @@ pub fn monthly(world: &mut World) {
             .max_by_key(|&o| world.opinion(s, o) + world.opinion(o, s));
         if let Some(o) = best {
             court(world, s, o, 0.0);
+        }
+    }
+}
+
+/// Names for frontier babies.
+const BABIES: [&str; 16] = [
+    "Kansas", "Lucy", "John", "Mary", "Charles", "Emma", "George", "Ellen", "Henry", "Nancy",
+    "Freedom", "Lorinda", "Asa", "Belle", "Willis", "Susannah",
+];
+
+/// Couples have children: one every few years, some of them born into a
+/// winter that kills them, and now and then the mother with them.
+pub fn births(world: &mut World) {
+    let couples = world.hearts.couples.clone();
+    for (a, b) in couples {
+        let (na, nb) = (world.npc(a), world.npc(b));
+        if !na.alive || !nb.alive || na.departed || nb.departed {
+            continue;
+        }
+        // Who carries: the woman, or the player if the player's spouse is a man.
+        let mother = match (is_woman(&na.name), is_woman(&nb.name)) {
+            (true, _) => a,
+            (_, true) => b,
+            _ if a == PLAYER || b == PLAYER => PLAYER,
+            _ => continue,
+        };
+        if !(18..=44).contains(&world.npc(mother).age) || !world.rng.chance(0.025) {
+            continue;
+        }
+        let family = world.npc(mother).family;
+        let name = BABIES[world.rng.range(0, BABIES.len() as u32) as usize];
+        let child = world.add_npc(family, name, 0);
+        world.emit_root(EventKind::Born { child, mother }, None);
+        if mother != PLAYER && world.rng.chance(0.015) {
+            world.emit_root(
+                EventKind::Perished {
+                    victim: mother,
+                    cause: super::events::Hardship::Fever,
+                },
+                None,
+            );
         }
     }
 }

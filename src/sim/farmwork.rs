@@ -208,6 +208,8 @@ pub fn daily(world: &mut World) {
     }
 
     match (month, dom) {
+        // Planting: a family that ate its seed has to find some.
+        (4, 21) => find_seed(world),
         // The planting window closes: whoever didn't plant, didn't.
         (6, 1) => {
             for f in &mut world.families {
@@ -236,6 +238,47 @@ pub fn daily(world: &mut World) {
     }
     if dom == 1 && matches!(month, 12 | 1 | 2 | 3) {
         winter_feed(world);
+    }
+}
+
+/// Seed corn for families that ate theirs: from the store on the book, or
+/// from a generous neighbor with some to spare — who is remembered for it.
+fn find_seed(world: &mut World) {
+    for f in 0..world.families.len() {
+        let family = f as FamilyId;
+        let hh = &world.families[f].stores;
+        if !world.families[f].farms() || world.head_of(family).is_none() || hh.seed * 2 >= hh.acres
+        {
+            continue;
+        }
+        if family == 0 && !world.autopilot_player {
+            continue; // the player buys their own
+        }
+        let want = hh.acres.saturating_sub(hh.seed);
+        if !super::legacy::credit_cut(world, family) && hh.debt < 40 {
+            let dollars = (want as f32 * world.market.price(Good::SeedCorn)).ceil() as i32;
+            let got = market::buy_on_credit(world, family, Good::SeedCorn, dollars);
+            if got > 0.0 {
+                world.families[f].stores.debt += dollars;
+                continue;
+            }
+        }
+        let head = world.head_of(family).unwrap();
+        let lender = world
+            .families
+            .iter()
+            .filter(|o| o.id != family && o.farms() && o.stores.seed > o.stores.acres + 2)
+            .filter_map(|o| world.head_of(o.id))
+            .filter(|&h| world.npc(h).temperament.generosity > 0.5 && world.opinion(h, head) > -20)
+            .max_by_key(|&h| world.opinion(h, head));
+        if let Some(l) = lender {
+            let lf = world.npc(l).family as usize;
+            let spare =
+                (world.families[lf].stores.seed - world.families[lf].stores.acres).min(want);
+            world.families[lf].stores.seed -= spare;
+            world.families[f].stores.seed += spare;
+            world.adjust_opinion(head, l, 15);
+        }
     }
 }
 

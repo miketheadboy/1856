@@ -725,6 +725,21 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             },
             path
         ),
+        EventKind::Born { child, mother } => format!(
+            "[BIRTH] {} was born to {}",
+            world.name(child),
+            who(world, mother)
+        ),
+        EventKind::ClaimBought {
+            family,
+            seller,
+            price,
+        } => format!(
+            "[LAND] {} sold you the {} claim for ${} and took the family back to the States",
+            capitalize(&who(world, seller)),
+            world.families[family as usize].surname,
+            price
+        ),
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),

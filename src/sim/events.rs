@@ -440,6 +440,16 @@ pub enum EventKind {
     },
     /// The union meeting divides, North and South.
     ChurchSplit,
+    Born {
+        child: NpcId,
+        mother: NpcId,
+    },
+    /// A broken family sells its claim and goes back to the States.
+    ClaimBought {
+        family: FamilyId,
+        seller: NpcId,
+        price: u16,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,
