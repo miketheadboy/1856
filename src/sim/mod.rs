@@ -4,6 +4,7 @@
 //! and calls the player verbs; the headless runner just prints what happens.
 
 pub mod attribution;
+pub mod bison;
 pub mod calendar;
 pub mod character;
 pub mod chronicle;

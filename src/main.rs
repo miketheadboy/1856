@@ -390,6 +390,7 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                 body,
                 &[
                     (Action::Choose(Choice::Hunt), "HUNT", green),
+                    (Action::Choose(Choice::GoWest), "BUFFALO RANGE", green),
                     (Action::Choose(Choice::EatSeed), "EAT SEED", green),
                     (Action::Choose(Choice::SpareCow), "BUTCHER COW", green),
                     (Action::Choose(Choice::Ox), "BUTCHER OX", green),
@@ -754,7 +755,18 @@ fn market_and_nations(world: &World) -> String {
 }
 
 fn nations(world: &World) -> String {
-    let mut s = String::from("NATIONS\nland pressure, trust (F-S / P-S)\n");
+    let herd = world.bison.abundance();
+    let mut s = format!(
+        "BUFFALO RANGE, WEST\n{} {}\n\nNATIONS\nland pressure, trust (F-S / P-S)\n",
+        bar(herd, 1.0),
+        if herd > 0.6 {
+            "herds plenty"
+        } else if herd > 0.3 {
+            "herds thinning"
+        } else {
+            "bones on the prairie"
+        }
+    );
     for n in &world.nations {
         s.push_str(&format!(
             "\n{}\n{}  {:.0} / {:.0}\n",

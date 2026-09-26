@@ -229,6 +229,15 @@ pub enum EventKind {
         person: NpcId,
         nation: super::nations::NationId,
     },
+    /// The Kaw come back from the fall buffalo hunt.
+    KawHunt {
+        good: bool,
+    },
+    /// A settler back from weeks on the range west.
+    BuffaloHunt {
+        hunter: NpcId,
+        animals: u32,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

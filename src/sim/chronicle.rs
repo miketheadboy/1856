@@ -314,6 +314,28 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             capitalize(&who(world, person)),
             nation.name()
         ),
+        EventKind::KawHunt { good } => {
+            if good {
+                "[BUFFALO] The Kaw are back from the fall hunt with meat and robes".to_string()
+            } else {
+                "[BUFFALO] The Kaw fall hunt found the herds thin. A hungry winter ahead"
+                    .to_string()
+            }
+        }
+        EventKind::BuffaloHunt { hunter, animals } => {
+            if animals == 0 {
+                format!(
+                    "[BUFFALO] {} came back from the range with nothing",
+                    capitalize(&who(world, hunter))
+                )
+            } else {
+                format!(
+                    "[BUFFALO] {} came back from the range with {} buffalo",
+                    capitalize(&who(world, hunter)),
+                    animals
+                )
+            }
+        }
         EventKind::History { index } => {
             format!("[NEWS] {}", super::history::TIMELINE[index].title)
         }

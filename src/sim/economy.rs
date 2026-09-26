@@ -184,7 +184,13 @@ fn decide(world: &mut World, family: FamilyId) {
     let free_state = world.families[family as usize].faction == Faction::FreeState;
 
     // Buying with cash on hand is just shopping. Hunting is just work.
-    if buy(world, family) || hunt(world, family) {
+    // In the cold months the robes are prime: a family with a team and powder
+    // tries the range before the rabbits.
+    let range_season = matches!(world.day.month(), 10..=12 | 1 | 2);
+    if buy(world, family)
+        || (range_season && super::bison::go_west(world, family))
+        || hunt(world, family)
+    {
         return;
     }
 
@@ -205,6 +211,7 @@ fn decide(world: &mut World, family: FamilyId) {
         ]
     } else if prudent {
         &[
+            Choice::GoWest,
             Choice::SpareCow,
             Choice::Beg,
             Choice::Borrow,
@@ -242,6 +249,8 @@ fn decide(world: &mut World, family: FamilyId) {
 pub enum Choice {
     /// Go out with the rifle. Free, if you can shoot and the game is there.
     Hunt,
+    /// Weeks west on the buffalo range with a wagon. Needs oxen and powder.
+    GoWest,
     EatSeed,
     /// Butcher one of the herd, keeping a breeding pair.
     SpareCow,
@@ -353,6 +362,7 @@ pub fn act(world: &mut World, family: FamilyId, choice: Choice) -> bool {
         }
         Choice::Beg => beg(world, family),
         Choice::Hunt => hunt(world, family),
+        Choice::GoWest => super::bison::go_west(world, family),
         Choice::Steal => steal(world, family),
     }
 }

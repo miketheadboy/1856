@@ -211,6 +211,7 @@ pub struct World {
     pub credit_crunch: bool,
     pub nations: Vec<Nation>,
     pub map: Map,
+    pub bison: super::bison::Herd,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -436,6 +437,7 @@ impl World {
             credit_crunch: false,
             nations: nations::founding(),
             map: Map::county(),
+            bison: super::bison::Herd::default(),
         };
         for f in 0..world.families.len() {
             let farm = world.families[f].farm;
@@ -829,6 +831,7 @@ impl World {
             *g = (*g as f32 * 0.8) as i32;
         }
         nations::monthly(self);
+        super::bison::monthly(self);
     }
 
     // ---- player verbs --------------------------------------------------
@@ -895,6 +898,16 @@ impl World {
         let dollars = market::sell(self, 0, good, qty);
         self.run_cascades();
         dollars
+    }
+
+    /// Take the wagon west to the buffalo range for a few weeks.
+    pub fn player_go_west(&mut self) -> bool {
+        if !self.player_alive() {
+            return false;
+        }
+        let done = super::bison::go_west(self, 0);
+        self.run_cascades();
+        done
     }
 
     /// Steal from a particular neighbor.
