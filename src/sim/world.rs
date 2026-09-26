@@ -229,38 +229,10 @@ const STORE: (&str, Faction) = ("Dunmore", Faction::ProSlavery);
 const PLAYER_SURNAME: &str = "Ashby";
 
 const GIVEN_NAMES: [&str; 32] = [
-    "Jonas",
-    "Martha",
-    "Cyrus",
-    "Elias",
-    "Ruth",
-    "Samuel",
-    "Clara",
-    "Thomas",
-    "Ada",
-    "William",
-    "Sarah",
-    "Amos",
-    "Lydia",
-    "Josiah",
-    "Hannah",
-    "Ezra",
-    "Abigail",
-    "Silas",
-    "Mercy",
-    "Levi",
-    "Temperance",
-    "Caleb",
-    "Prudence",
-    "Obadiah",
-    "Delia",
-    "Asa",
-    "Hester",
-    "Gideon",
-    "Nell",
-    "Jubal",
-    "Cassius",
-    "Orpha",
+    "Jonas", "Martha", "Cyrus", "Elias", "Ruth", "Samuel", "Clara", "Thomas", "Ada", "William",
+    "Sarah", "Amos", "Lydia", "Josiah", "Hannah", "Ezra", "Abigail", "Silas", "Maggie", "Levi",
+    "Louise", "Caleb", "Prudence", "Obadiah", "Delia", "Asa", "Hester", "Gideon", "Ramona",
+    "Hollis", "Cassius", "Johanna",
 ];
 
 pub fn distance(a: (i32, i32), b: (i32, i32)) -> f32 {
@@ -851,8 +823,10 @@ impl World {
                     .insert((a, b), (value + thaw).min(default));
             }
         }
+        // Grievance fades by a fifth a month: old wrongs lose their heat unless
+        // new ones feed them.
         for g in &mut self.grievance {
-            *g = (*g - 12).max(0);
+            *g = (*g as f32 * 0.8) as i32;
         }
         nations::monthly(self);
     }

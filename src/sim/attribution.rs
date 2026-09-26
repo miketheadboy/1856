@@ -21,6 +21,8 @@ pub struct Candidate {
     pub score: f32,
     /// The biggest single reason, surfaced so the blame is legible (§11.5).
     pub reason: &'static str,
+    /// Every term that went into the score, for debugging and `lab blame`.
+    pub parts: Vec<(&'static str, f32)>,
 }
 
 #[derive(Clone, Debug)]
@@ -86,6 +88,7 @@ pub fn candidates(
             } else {
                 "the sky did it"
             },
+            parts: Vec::new(),
         });
         let accident = 12.0
             + match ev.day.season() {
@@ -97,6 +100,7 @@ pub fn candidates(
             suspect: Suspect::Accident,
             score: accident + rumor_for(Suspect::Accident),
             reason: "a stray spark",
+            parts: Vec::new(),
         });
     }
 
@@ -108,6 +112,7 @@ pub fn candidates(
             suspect: Suspect::Nature,
             score: 25.0 + rumor_for(Suspect::Nature),
             reason: "wolves got it",
+            parts: Vec::new(),
         }),
         EventKind::Cruelty {
             act: Cruelty::FoulWell,
@@ -116,6 +121,7 @@ pub fn candidates(
             suspect: Suspect::Accident,
             score: 25.0 + rumor_for(Suspect::Accident),
             reason: "bad water in a wet spring",
+            parts: Vec::new(),
         }),
         _ => {}
     }
@@ -143,6 +149,10 @@ pub fn candidates(
             score: super::nations::suspicion(world, observer, nid, site)
                 + rumor_for(Suspect::Nation(nid)),
             reason: "they've been coming around hungry",
+            parts: vec![(
+                "prejudice",
+                super::nations::suspicion(world, observer, nid, site),
+            )],
         });
     }
 
@@ -152,6 +162,7 @@ pub fn candidates(
             suspect: Suspect::Accident,
             score: 20.0 + rumor_for(Suspect::Accident),
             reason: "it strayed off",
+            parts: Vec::new(),
         });
     }
 
@@ -222,6 +233,17 @@ pub fn candidates(
             suspect: Suspect::Person(p),
             score,
             reason,
+            parts: vec![
+                ("base", -25.0),
+                ("hostility", hostility),
+                ("proximity", proximity),
+                ("motive", motive),
+                ("hunger", hunger),
+                ("capability", capability),
+                ("pattern", pattern),
+                ("rumor", rumor_boost),
+                ("alibi", -alibi),
+            ],
         });
     }
 

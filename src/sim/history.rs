@@ -296,7 +296,7 @@ pub const TIMELINE: &[Moment] = &[
     Moment {
         date: (1856, 9, 9),
         title: "Governor Geary arrives with the dragoons",
-        free_state: "A new governor. We shall see.",
+        free_state: "A new governor. The times, some say, are changing.",
         pro_slavery: "Another governor from Washington, another meddler.",
         effect: Effect {
             pacify_days: 90,
