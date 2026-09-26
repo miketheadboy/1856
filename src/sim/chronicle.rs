@@ -453,7 +453,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             world.families[a as usize].surname,
             world.families[b as usize].surname,
             match how {
-                super::reconcile::Peace::Exhaustion => "nobody could remember why",
+                super::reconcile::Peace::Exhaustion => "nobody could remember why. It's all over now",
                 super::reconcile::Peace::CommonEnemy => "they hate someone else more",
                 super::reconcile::Peace::Calamity => "trouble did it",
                 super::reconcile::Peace::Brokered => "someone talked them down",
@@ -552,7 +552,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             who(world, b)
         ),
         EventKind::Scandal { a, b, wronged } => format!(
-            "[SCANDAL] {} and {} were seen together. {} knows",
+            "[SCANDAL] {} and {} were seen together, tangled up. {} knows",
             capitalize(&who(world, a)),
             who(world, b),
             capitalize(&who(world, wronged))
@@ -757,13 +757,13 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 s.from
             )
         }
+        EventKind::Sheltered { seeker, family: 0 } => format!(
+            "[RAILROAD] You hid {} in the loft: shelter from the storm",
+            world.railroad.name(seeker)
+        ),
         EventKind::Sheltered { seeker, family } => format!(
-            "[RAILROAD] {} hid {} in the loft",
-            if family == 0 {
-                "You".to_string()
-            } else {
-                format!("The {}", plural(world.families[family as usize].surname))
-            },
+            "[RAILROAD] The {} hid {} in the loft",
+            plural(world.families[family as usize].surname),
             world.railroad.name(seeker)
         ),
         EventKind::TurnedAway { seeker, family } => format!(

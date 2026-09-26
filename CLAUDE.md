@@ -133,8 +133,12 @@ trips the Westport blockade early); fires run ~25 per two years.
 - The view shows only the verbs that apply today (`available` in main.rs):
   the ballot on election day, the door when someone's knocking.
 - Visual style: survey plat on charcoal, bone type, live greens and river
-  blue, oxblood and brass accents. A few quiet Dylan nods (names, "a hard
-  rain", the death line). Titles and allusions only, never lyrics.
+  blue, oxblood and brass accents. Woodcut sprites (`tools/woodcut.py`
+  writes `assets/sprites/`); seasons on the grass, weather and smoke over the
+  map, and night by the moon (`src/scenery.rs`). The log is a broadsheet
+  column under whichever paper spoke last. A few quiet Dylan nods (names,
+  "a hard rain", the death line, "tangled up", "shelter from the storm",
+  "it's all over now"). Titles and allusions only, never lyrics.
 
 ## Git
 

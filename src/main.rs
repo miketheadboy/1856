@@ -4,6 +4,8 @@
 //! Debug knobs (env vars): BK_SEED, BK_START_DAYS (run the sim ahead before
 //! showing it), BK_DAY_SECONDS (clock speed).
 
+mod scenery;
+
 use bevy::prelude::*;
 use bleeding_kansas::sim::character;
 use bleeding_kansas::sim::chronicle::{self, suspect_label};
@@ -12,15 +14,14 @@ use bleeding_kansas::sim::economy::Choice;
 use bleeding_kansas::sim::events::{Cruelty, Source};
 use bleeding_kansas::sim::family::{self, Errand};
 use bleeding_kansas::sim::farmwork;
-use bleeding_kansas::sim::geography::{self, HEIGHT, PLACES, Terrain, WIDTH};
+use bleeding_kansas::sim::geography::{self, PLACES};
 use bleeding_kansas::sim::intrigue;
 use bleeding_kansas::sim::law;
 use bleeding_kansas::sim::life::{self, Activity, Skill};
 use bleeding_kansas::sim::market::Good;
-use bleeding_kansas::sim::nations::NationId;
 use bleeding_kansas::sim::psyche::{self, Condition};
 use bleeding_kansas::sim::railroad::Answer;
-use bleeding_kansas::sim::world::{Faction, FamilyId, NpcId, PLAYER, World};
+use bleeding_kansas::sim::world::{Faction, NpcId, PLAYER, World};
 
 const TILE: f32 = 12.0;
 
@@ -34,6 +35,8 @@ const BRASS: Color = Color::srgb(0.72, 0.57, 0.35);
 const OXBLOOD: Color = Color::srgb(0.56, 0.17, 0.13);
 const SLATE: Color = Color::srgb(0.40, 0.55, 0.72);
 const INK_GREEN: Color = Color::srgb(0.20, 0.30, 0.18);
+const NEWSPRINT: Color = Color::srgb(0.87, 0.83, 0.72);
+const INK: Color = Color::srgb(0.10, 0.08, 0.06);
 
 #[derive(Resource)]
 struct Fonts {
@@ -54,7 +57,7 @@ impl FromWorld for Fonts {
 }
 /// Map's top-left corner in world coordinates (screen is 1280x720, centered).
 const MAP_ORIGIN: Vec2 = Vec2::new(-624.0, 344.0);
-const LOG_LINES: usize = 14;
+const LOG_LINES: usize = 8;
 
 fn env_num<T: std::str::FromStr>(key: &str, default: T) -> T {
     std::env::var(key)
@@ -81,9 +84,6 @@ struct NpcSprite {
     phase: f32,
 }
 
-#[derive(Component)]
-struct BarnSprite(FamilyId);
-
 /// A pale light over a restless grave. Pooled; the sim decides where.
 #[derive(Component)]
 struct Wisp(usize);
@@ -97,6 +97,8 @@ enum Label {
     Market,
     Nations,
     Log,
+    Masthead,
+    Dateline,
 }
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
@@ -136,7 +138,9 @@ fn main() {
     // Fast-forward with the sim running your household, then hand it over.
     world.run_days(env_num("BK_START_DAYS", 0));
     world.autopilot_player = false;
-    let day_seconds: f32 = env_num("BK_DAY_SECONDS", 1.2);
+    // Four seconds a day: long enough to choose the day's work, and for
+    // dusk and a moonlit night to pass over the map.
+    let day_seconds: f32 = env_num("BK_DAY_SECONDS", 4.0);
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -155,7 +159,8 @@ fn main() {
             timer: Timer::from_seconds(day_seconds, TimerMode::Repeating),
             paused: false,
         })
-        .add_systems(Startup, (setup_map, setup_ui))
+        .init_resource::<scenery::Art>()
+        .add_systems(Startup, (scenery::setup, setup_map, setup_ui).chain())
         .add_systems(
             Update,
             (
@@ -163,8 +168,13 @@ fn main() {
                 keyboard,
                 select_npc,
                 handle_actions,
+                spawn_figures,
                 draw_npcs,
-                draw_barns,
+                scenery::seasons,
+                scenery::buildings,
+                scenery::night,
+                scenery::weather,
+                scenery::smoke,
                 draw_spirits,
                 update_panels,
                 show_buttons,
@@ -182,39 +192,9 @@ fn tile_to_world(t: (i32, i32)) -> Vec2 {
         )
 }
 
-fn terrain_color(t: Terrain, tile: (i32, i32)) -> Color {
-    // A little hand-inked unevenness, deterministic per tile.
-    let h = (tile.0 as u32).wrapping_mul(73_856_093) ^ (tile.1 as u32).wrapping_mul(19_349_663);
-    let j = ((h % 1000) as f32 / 1000.0 - 0.5) * 0.06;
-    let (r, g, b) = match t {
-        Terrain::Prairie => (0.56, 0.64, 0.36),
-        Terrain::Timber => (0.24, 0.42, 0.23),
-        Terrain::River => (0.24, 0.50, 0.74),
-        Terrain::Road => (0.66, 0.54, 0.36),
-        Terrain::Town => (0.85, 0.81, 0.72),
-        Terrain::Reserve(NationId::Delaware) => (0.62, 0.68, 0.43),
-        Terrain::Reserve(_) => (0.66, 0.66, 0.45),
-    };
-    let j = if t == Terrain::River { j * 0.5 } else { j };
-    Color::srgb(r + j, g + j, b + j * 0.5)
-}
-
 fn setup_map(mut commands: Commands, sim: Res<Sim>, fonts: Res<Fonts>) {
     commands.spawn(Camera2d);
     let world = &sim.0;
-
-    for ty in 0..HEIGHT {
-        for tx in 0..WIDTH {
-            commands.spawn((
-                Sprite {
-                    color: terrain_color(world.map.at((tx, ty)), (tx, ty)),
-                    custom_size: Some(Vec2::splat(TILE)),
-                    ..default()
-                },
-                Transform::from_translation(tile_to_world((tx, ty)).extend(0.0)),
-            ));
-        }
-    }
 
     for p in PLACES {
         let at = tile_to_world(geography::to_tile(p.at));
@@ -271,22 +251,14 @@ fn setup_map(mut commands: Commands, sim: Res<Sim>, fonts: Res<Fonts>) {
             Faction::FreeState => SLATE,
             Faction::ProSlavery => OXBLOOD,
         };
+        // The claim's side, as a rule under its name.
         commands.spawn((
             Sprite {
                 color: edge,
-                custom_size: Some(Vec2::splat(TILE + 4.0)),
+                custom_size: Some(Vec2::new(18.0, 2.0)),
                 ..default()
             },
-            Transform::from_translation(at.extend(1.0)),
-        ));
-        commands.spawn((
-            Sprite {
-                color: Color::srgb(0.45, 0.26, 0.16),
-                custom_size: Some(Vec2::splat(TILE)),
-                ..default()
-            },
-            Transform::from_translation(at.extend(1.1)),
-            BarnSprite(f.id),
+            Transform::from_translation((at + Vec2::new(0.0, -22.0)).extend(3.0)),
         ));
         let label = if f.id == 0 {
             "You".to_string()
@@ -303,7 +275,7 @@ fn setup_map(mut commands: Commands, sim: Res<Sim>, fonts: Res<Fonts>) {
                 ..default()
             },
             TextColor(Color::srgb(0.08, 0.07, 0.06)),
-            Transform::from_translation((at + Vec2::new(0.0, -13.0)).extend(3.0)),
+            Transform::from_translation((at + Vec2::new(0.0, -15.0)).extend(3.0)),
         ));
     }
 
@@ -318,20 +290,37 @@ fn setup_map(mut commands: Commands, sim: Res<Sim>, fonts: Res<Fonts>) {
             Wisp(i),
         ));
     }
+}
 
-    for (i, npc) in world.npcs.iter().enumerate() {
+/// Everyone gets a figure, including kin who arrive and babies born later.
+fn spawn_figures(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    art: Res<scenery::Art>,
+    mut spawned: Local<usize>,
+) {
+    let world = &sim.0;
+    while *spawned < world.npcs.len() {
+        let i = *spawned;
+        let id = world.npcs[i].id;
         commands.spawn((
             Sprite {
+                image: scenery::figure(&art, world, id),
                 color: Color::WHITE,
-                custom_size: Some(Vec2::splat(if npc.id == PLAYER { 7.0 } else { 5.0 })),
+                custom_size: Some(if id == PLAYER {
+                    Vec2::new(8.0, 16.0)
+                } else {
+                    Vec2::new(6.0, 12.0)
+                }),
                 ..default()
             },
-            Transform::from_translation(tile_to_world(world.farm_of(npc.id)).extend(2.0)),
+            Transform::from_translation(tile_to_world(world.farm_of(id)).extend(2.0)),
             NpcSprite {
-                id: npc.id,
+                id,
                 phase: i as f32 * 2.399,
             },
         ));
+        *spawned += 1;
     }
 }
 
@@ -601,11 +590,45 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                     (Action::Sign(false), "REFUSE", gray),
                 ],
             );
-            panel.spawn((
-                Text::new("What people are saying"),
-                text(display, 17.0, BRASS),
-            ));
-            panel.spawn((Text::new(""), text(body, 12.5, BONE), Label::Log));
+            // A broadsheet column: newsprint, Fell type, a masthead when a
+            // paper has something to say.
+            panel
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                        margin: UiRect::top(Val::Px(6.0)),
+                        border: UiRect::vertical(Val::Px(2.0)),
+                        ..default()
+                    },
+                    BackgroundColor(NEWSPRINT),
+                    BorderColor::all(INK),
+                ))
+                .with_children(|paper| {
+                    paper.spawn((
+                        Text::new("THE COUNTY TALK"),
+                        text(display, 19.0, INK),
+                        TextLayout::new_with_justify(Justify::Center),
+                        Node {
+                            align_self: AlignSelf::Center,
+                            ..default()
+                        },
+                        Label::Masthead,
+                    ));
+                    paper.spawn((
+                        Text::new(""),
+                        text(display, 11.0, INK.with_alpha(0.75)),
+                        Node {
+                            align_self: AlignSelf::Center,
+                            border: UiRect::bottom(Val::Px(1.0)),
+                            margin: UiRect::bottom(Val::Px(3.0)),
+                            ..default()
+                        },
+                        BorderColor::all(INK),
+                        Label::Dateline,
+                    ));
+                    paper.spawn((Text::new(""), text(display, 12.5, INK), Label::Log));
+                });
         });
 
     // Bottom panel: household, market, nations.
@@ -787,6 +810,7 @@ fn handle_actions(
 fn draw_npcs(
     time: Res<Time>,
     sim: Res<Sim>,
+    art: Res<scenery::Art>,
     selection: Res<Selection>,
     mut sprites: Query<(&NpcSprite, &mut Transform, &mut Sprite, &mut Visibility)>,
 ) {
@@ -794,11 +818,16 @@ fn draw_npcs(
     let t = time.elapsed_secs();
     for (s, mut transform, mut sprite, mut vis) in &mut sprites {
         let npc = world.npc(s.id);
-        if npc.adopted_by.is_some() {
+        if npc.adopted_by.is_some() || npc.departed {
             *vis = Visibility::Hidden;
             continue;
         }
-        let home = tile_to_world(world.farm_of(s.id));
+        // Children grow into men and women.
+        let img = scenery::figure(&art, world, s.id);
+        if sprite.image != img {
+            sprite.image = img;
+        }
+        let home = tile_to_world(world.farm_of(s.id)) + Vec2::new(0.0, -4.0);
         let wander = if npc.alive {
             Vec2::new((t * 0.15 + s.phase).sin(), (t * 0.11 + s.phase * 1.7).cos()) * TILE * 0.9
         } else {
@@ -860,7 +889,7 @@ fn draw_spirits(
                     (t * 0.4 + phase).sin() * 9.0,
                     (t * 0.7 + phase).cos() * 5.0 + 8.0,
                 );
-                tf.translation = (tile_to_world(h.site) + drift).extend(4.0);
+                tf.translation = (tile_to_world(h.site) + drift).extend(6.2);
                 // Brighter under a full moon.
                 let glow = 0.5 + 0.3 * world.day.moonlight() + 0.15 * (t * 1.3 + phase).sin();
                 sprite.color = Color::srgba(0.92, 0.97, 1.0, glow.clamp(0.3, 0.95));
@@ -870,13 +899,37 @@ fn draw_spirits(
     }
 }
 
-fn draw_barns(sim: Res<Sim>, mut barns: Query<(&BarnSprite, &mut Sprite)>) {
-    for (barn, mut sprite) in &mut barns {
-        sprite.color = if sim.0.families[barn.0 as usize].barn_standing {
-            Color::srgb(0.45, 0.26, 0.16)
-        } else {
-            Color::srgb(0.06, 0.05, 0.04)
-        };
+/// "3 Mar 1856  [MARKET] Corn up..." set as a run-in head: "MARKET. Corn up..."
+fn broadsheet(line: &str) -> String {
+    let (date, rest) = line.split_at(line.len().min(11));
+    match rest
+        .trim_start()
+        .strip_prefix('[')
+        .and_then(|r| r.split_once("] "))
+    {
+        Some((tag, body)) => format!("{} {}. {}", date.trim(), tag, body),
+        None => line.to_string(),
+    }
+}
+
+/// Whichever paper spoke most recently gets the masthead.
+fn masthead(world: &World) -> (&'static str, &'static str) {
+    let recent = world
+        .events
+        .iter()
+        .rev()
+        .take(400)
+        .find_map(|e| match e.kind {
+            bleeding_kansas::sim::EventKind::Headline { paper, .. }
+            | bleeding_kansas::sim::EventKind::Notice { paper, .. } => Some(paper),
+            _ => None,
+        });
+    use bleeding_kansas::sim::history::Paper;
+    match recent {
+        Some(Paper::HeraldOfFreedom) => ("HERALD OF FREEDOM", "Lawrence, K.T."),
+        Some(Paper::KansasFreeState) => ("KANSAS FREE STATE", "Lawrence, K.T."),
+        Some(Paper::SquatterSovereign) => ("SQUATTER SOVEREIGN", "Atchison, K.T."),
+        None => ("THE COUNTY TALK", "Douglas County, K.T."),
     }
 }
 
@@ -1206,7 +1259,16 @@ fn update_panels(
             Label::Log => {
                 let lines = chronicle::chronicle(world, false);
                 let start = lines.len().saturating_sub(LOG_LINES);
-                lines[start..].join("\n")
+                lines[start..]
+                    .iter()
+                    .map(|l| broadsheet(l))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            Label::Masthead => masthead(world).0.to_string(),
+            Label::Dateline => {
+                let (_, place) = masthead(world);
+                format!("{}  ~  {}", place, world.day)
             }
         };
         **t = plain(&content);
