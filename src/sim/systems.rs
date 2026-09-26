@@ -83,7 +83,8 @@ fn fire_system(world: &mut World, ev: &WorldEvent) {
         .filter(|(_, d)| *d <= 7.0)
         .collect();
     for (neighbor, d) in neighbors {
-        if world.rng.chance(spread * (1.0 - d / 8.0))
+        let fuel = world.map.at(world.families[neighbor as usize].farm).fuel();
+        if world.rng.chance(spread * fuel * (1.0 - d / 8.0))
             && let Some(head) = world.head_of(neighbor)
         {
             world.emit_child(
@@ -191,7 +192,9 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
             (1.0 - 0.6 * n.body.stealth) * ghost
         });
         let keen = 0.6 + 0.8 * world.npc(observer).body.alertness;
-        let saw = actor.filter(|_| world.rng.chance(sight * hidden * keen));
+        // Timber hides a rider; open prairie shows him for miles (§7.4).
+        let terrain = world.map.at(site).visibility();
+        let saw = actor.filter(|_| world.rng.chance(sight * hidden * keen * terrain));
         if !stakeholder {
             psyche::feel(world, observer, |e| e.fear += 10.0);
         }

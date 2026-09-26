@@ -8,6 +8,7 @@ use super::economy::{self, Choice, Household};
 use super::events::{
     EVENTS_PER_TICK, EventId, EventKind, FireCause, MAX_CASCADE_DEPTH, Source, Suspect, WorldEvent,
 };
+use super::geography::{self, Map};
 use super::history;
 use super::market::{self, Good, Market};
 use super::nations::{self, Nation, NationId};
@@ -148,6 +149,8 @@ pub struct Family {
     pub stores: Household,
     /// The general store: sells food, extends credit, keeps a ledger.
     pub store: bool,
+    /// How far to the nearest timber you can cut without trespassing.
+    pub timber_miles: f32,
 }
 
 impl Family {
@@ -207,6 +210,7 @@ pub struct World {
     /// After the Panic of 1857, credit is tight.
     pub credit_crunch: bool,
     pub nations: Vec<Nation>,
+    pub map: Map,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -259,17 +263,6 @@ const GIVEN_NAMES: [&str; 32] = [
     "Orpha",
 ];
 
-const FARM_SLOTS: [(i32, i32); 8] = [
-    (5, 5),
-    (15, 4),
-    (25, 5),
-    (4, 15),
-    (26, 15),
-    (5, 25),
-    (15, 26),
-    (25, 25),
-];
-
 pub fn distance(a: (i32, i32), b: (i32, i32)) -> f32 {
     let (dx, dy) = ((a.0 - b.0) as f32, (a.1 - b.1) as f32);
     (dx * dx + dy * dy).sqrt()
@@ -290,7 +283,7 @@ impl World {
             id: 0,
             surname: PLAYER_SURNAME,
             faction: Faction::FreeState,
-            farm: (15, 15),
+            farm: geography::to_tile(geography::PLAYER_CLAIM),
             barn_standing: true,
             barn_burned_on: None,
             stores: Household {
@@ -304,12 +297,17 @@ impl World {
                 ..Default::default()
             },
             store: false,
+            timber_miles: 0.0,
         }];
-        let mut slots = FARM_SLOTS.to_vec();
+        let mut free_claims = geography::CLAIMS_FREE_STATE.to_vec();
+        let mut pro_claims = geography::CLAIMS_PRO_SLAVERY.to_vec();
         for (surname, faction) in FAMILIES {
-            let slot = slots.remove(rng.range(0, slots.len() as u32) as usize);
-            let jitter = |rng: &mut SimRng| rng.range(0, 5) as i32 - 2;
-            let farm = (slot.0 + jitter(&mut rng), slot.1 + jitter(&mut rng));
+            let claims = match faction {
+                Faction::FreeState => &mut free_claims,
+                Faction::ProSlavery => &mut pro_claims,
+            };
+            let claim = claims.remove(rng.range(0, claims.len() as u32) as usize);
+            let farm = geography::to_tile(claim);
             let acres = rng.range(6, 14);
             families.push(Family {
                 id: families.len() as FamilyId,
@@ -330,13 +328,14 @@ impl World {
                     ..Default::default()
                 },
                 store: false,
+                timber_miles: 0.0,
             });
         }
         families.push(Family {
             id: families.len() as FamilyId,
             surname: STORE.0,
             faction: STORE.1,
-            farm: (15, 10),
+            farm: geography::to_tile(geography::place("Franklin")),
             barn_standing: true,
             barn_burned_on: None,
             stores: Household {
@@ -346,6 +345,7 @@ impl World {
                 ..Default::default()
             },
             store: true,
+            timber_miles: 0.0,
         });
 
         let mut npcs = vec![Npc {
@@ -463,7 +463,12 @@ impl World {
             pacified_until: None,
             credit_crunch: false,
             nations: nations::founding(),
+            map: Map::county(),
         };
+        for f in 0..world.families.len() {
+            let farm = world.families[f].farm;
+            world.families[f].timber_miles = world.map.miles_to_timber(farm);
+        }
 
         // Winter stores: most families went into 1855 short.
         for f in 1..world.families.len() {

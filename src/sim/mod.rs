@@ -9,6 +9,7 @@ pub mod character;
 pub mod chronicle;
 pub mod economy;
 pub mod events;
+pub mod geography;
 pub mod history;
 pub mod market;
 pub mod nations;

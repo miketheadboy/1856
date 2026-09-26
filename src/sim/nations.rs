@@ -77,7 +77,8 @@ pub fn founding() -> Vec<Nation> {
     vec![
         Nation {
             id: NationId::Delaware,
-            border: (15, 0),
+            // Across the Kaw from Lecompton and Lawrence.
+            border: super::geography::to_tile((15.0, 1.5)),
             population: 900,
             food_security: 0.7,
             timber: 400.0,
@@ -94,7 +95,8 @@ pub fn founding() -> Vec<Nation> {
         },
         Nation {
             id: NationId::Shawnee,
-            border: (29, 15),
+            // The line east of Eudora.
+            border: super::geography::to_tile((31.5, 7.0)),
             population: 900,
             food_security: 0.7,
             timber: 150.0,
