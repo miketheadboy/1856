@@ -100,7 +100,7 @@ pub enum Find {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pastime {
-    Chores,
+    Chores(super::farmwork::Task),
     Fished,
     Roamed(Find),
     Drank,
@@ -294,13 +294,16 @@ fn pastime(world: &mut World, what: Pastime, amount: u16) {
 }
 
 fn chores(world: &mut World) -> bool {
+    // Whatever the season asks: plow, plant, hay, pick, butcher, or fence.
     let farming = world.life.skill(Skill::Farming);
-    let food = 1.0 + 4.0 * farming;
-    world.families[0].stores.food += food;
+    let hands = 0.7 + 0.8 * farming;
+    let task = super::farmwork::work(world, 0, hands);
+    // Hens and the garden, a little every day.
+    world.families[0].stores.food += 1.0 + 2.0 * farming;
     world.life.learn(Skill::Farming, 2.0);
     // Drudgery, unless you've come to love it.
     world.life.cheer(-1.0 + 4.0 * farming);
-    pastime(world, Pastime::Chores, food as u16);
+    pastime(world, Pastime::Chores(task), 1);
     true
 }
 

@@ -147,6 +147,7 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         ),
         EventKind::Death { victim, killer } => (victim, killer, true),
         EventKind::Theft { thief, victim, .. } => (victim, Some(thief), false),
+        EventKind::Strayed { owner } => (owner, None, false),
         EventKind::Cruelty {
             actor,
             victim,

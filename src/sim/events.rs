@@ -372,6 +372,15 @@ pub enum EventKind {
         holiday: super::civic::Holiday,
         crowd: u8,
     },
+    /// A cow got through bad fence and never came home. The owner decides why.
+    Strayed {
+        owner: NpcId,
+    },
+    /// Not enough hay put up: stock died on the winter prairie.
+    StockStarved {
+        family: FamilyId,
+        head: u8,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

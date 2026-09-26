@@ -45,6 +45,7 @@ Sim modules (`src/sim/`):
 | `ghosts` | oaths sworn over the dead, inherited oaths, children who come of age, shame when kin think the dead deserved it, restless spirits seen by moonlight |
 | `reconcile` | the better way: mercy at the moment of the act, barn raisings (a rival among the hands), apologies, condolence at a child's grave, enemy-of-my-enemy, feuds that starve, truces, the player's broker verb |
 | `family` | kin and absence: errands (buffalo, fishing, courting, town, drinking) take the player away; harm at home while away costs kin's regard |
+| `farmwork` | the farm year: plow, plant (almanac folk wait for the moon and plant late), hay, picking corn before December, butchering, fences; strays feed attribution; short hay kills stock |
 | `life` | the player's days: one activity a day (chores, fish, roam, visit, court, drink, preach, baptize, speech, build, file a claim, study), eight skills that grow by doing, spirits, Jones-style goals, emergent paths (preacher, souse, rake, silver tongue, vagabond, pillar...) |
 | `romance` | couples, courtship, seduction, affairs, scandal, marriages that make in-laws (and end feuds) |
 | `civic` | county projects (schoolhouse, bridge, lyceum), the Lecompton land office and claim jumpers, festivals |

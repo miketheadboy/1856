@@ -11,6 +11,7 @@ use bleeding_kansas::sim::civic::Project;
 use bleeding_kansas::sim::economy::Choice;
 use bleeding_kansas::sim::events::Source;
 use bleeding_kansas::sim::family::{self, Errand};
+use bleeding_kansas::sim::farmwork;
 use bleeding_kansas::sim::geography::{self, HEIGHT, PLACES, Terrain, WIDTH};
 use bleeding_kansas::sim::life::{self, Activity, Skill};
 use bleeding_kansas::sim::market::Good;
@@ -860,6 +861,8 @@ fn household(world: &World) -> String {
             "burned"
         },
     );
+    s.push('\n');
+    s.push_str(&farmwork::status(world));
     if world.pending_favor.is_some() {
         s.push_str("\n\nDUNMORE WANTS YOUR NAME ON HIS PETITION.");
     }

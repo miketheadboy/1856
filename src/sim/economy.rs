@@ -56,6 +56,8 @@ pub struct Household {
     pub announced: u8,
     /// Salt, powder, timber, whiskey, hides (indexed by `Good`).
     pub goods: [f32; GOODS],
+    /// The farm year: plowing, planting, hay, corn in the field, fences.
+    pub work: super::farmwork::Farm,
 }
 
 impl Household {
@@ -169,7 +171,6 @@ pub fn daily(world: &mut World) {
                 f.stores.announced = 0;
             }
         }
-        (4, 15) => plant(world),
         (5, 1) => breed(world),
         (9, 20) => harvest(world),
         _ => {}
@@ -523,14 +524,16 @@ pub fn steal_from(world: &mut World, thief: NpcId, victim_family: FamilyId, vict
     );
 }
 
-fn plant(world: &mut World) {
-    for f in &mut world.families {
-        if f.store {
-            continue;
-        }
+/// Seed goes in the ground once the planting work is done (`farmwork`).
+pub fn sow(world: &mut World, family: FamilyId, plowed: bool) {
+    let f = &mut world.families[family as usize];
+    if f.store {
+        return;
+    }
+    {
         let hh = &mut f.stores;
-        // Oxen break new sod every spring. Without them you're frozen at this size.
-        if hh.oxen > 0 {
+        // Oxen break new sod each spring — if you did the plowing.
+        if hh.oxen > 0 && plowed {
             hh.acres += 1;
         }
         let capacity = if hh.oxen > 0 {
@@ -581,14 +584,17 @@ fn harvest(world: &mut World) {
             .head_of(f as FamilyId)
             .map_or(1.0, |h| world.npc(h).hidden.luck);
         let hh = &mut world.families[f].stores;
+        let late = super::farmwork::timing(hh.work.planted_on);
         let mut bushels =
-            (hh.planted as f32 * 14.0 * rain_factor * (0.6 + 0.5 * labor) * luck) as u32;
+            (hh.planted as f32 * 14.0 * rain_factor * (0.6 + 0.5 * labor) * luck * late) as u32;
         // Hold back next year's seed first.
         let keep = hh.acres.saturating_sub(hh.seed).min(bushels);
         hh.seed += keep;
         bushels -= keep;
         let food = bushels as f32 * SEED_FOOD;
-        hh.food += food;
+        // It's standing in the field until somebody picks it.
+        hh.work.standing += food;
+        hh.work.crop = hh.work.standing;
         // Surplus pays down the store, at whatever corn fetches this fall.
         if hh.debt > 0 && hh.food > 250.0 {
             let per_dollar = SEED_FOOD / bid;

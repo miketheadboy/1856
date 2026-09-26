@@ -17,6 +17,7 @@
 //!   bison                    the herd and robe prices over time
 //!   life <routine>           live a player's life on a routine (farmer, fisher,
 //!                            preacher, souse, rake, orator, builder, roamer)
+//!   farm                     each family's farm year: planting, hay, corn, fences
 //!   county                   weddings, affairs, scandals, claims, projects across seeds
 //!   metrics <file.csv>       daily metrics for charts
 //!   trace <file.tsv>         every event with its cascade links
@@ -97,6 +98,7 @@ fn main() {
         "bison" => bison(&o),
         "life" => life_routine(&o),
         "county" => county(&o),
+        "farm" => farm(&o),
         "metrics" => dump(&o, "metrics.csv", debug::metrics_csv),
         "trace" => dump(&o, "trace.tsv", debug::trace_tsv),
         "time" => time(&o),
@@ -586,5 +588,36 @@ fn county(o: &Opts) {
     .zip(t)
     {
         println!("{label:<16} {:>5.1} per seed", v as f32 / n);
+    }
+}
+
+fn farm(o: &Opts) {
+    let mut w = World::with_winter(o.seed, o.winter);
+    for _ in 0..(o.days / 30).max(1) {
+        w.run_days(30);
+        println!(
+            "{}  {}",
+            w.day,
+            bleeding_kansas::sim::farmwork::due(w.day).label()
+        );
+        for f in &w.families {
+            if f.store {
+                continue;
+            }
+            let hh = &f.stores;
+            println!(
+                "   {:<10} planted {:<12} acres {:>2}  standing {:>6.0}  food {:>6.0}  hay {:>4.1}  fences {:>3.0}%  cattle {}",
+                f.surname,
+                hh.work
+                    .planted_on
+                    .map_or("-".to_string(), |d| d.to_string()),
+                hh.acres,
+                hh.work.standing,
+                hh.food,
+                hh.work.hay,
+                hh.work.fences * 100.0,
+                hh.cattle
+            );
+        }
     }
 }

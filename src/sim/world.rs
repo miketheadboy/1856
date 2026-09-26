@@ -506,6 +506,13 @@ impl World {
             }
         }
 
+        // Hay put up in the fall of 1855, more or less enough.
+        for f in 0..world.families.len() {
+            let hh = &world.families[f].stores;
+            let head = (hh.cattle + hh.oxen) as f32;
+            let enough = 0.6 + 0.6 * world.rng.unit();
+            world.families[f].stores.work.hay = head * super::farmwork::HAY_PER_HEAD * enough;
+        }
         world.roll_weather();
         world.civic = super::civic::Civic::founding(&mut world);
         world
@@ -702,6 +709,7 @@ impl World {
         super::ghosts::daily(self);
         super::mortality::daily(self);
         super::family::daily(self);
+        super::farmwork::daily(self);
         super::civic::daily(self);
         super::life::daily(self);
         systems::spread_gossip(self);

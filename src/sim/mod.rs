@@ -13,6 +13,7 @@ pub mod debug;
 pub mod economy;
 pub mod events;
 pub mod family;
+pub mod farmwork;
 pub mod geography;
 pub mod ghosts;
 pub mod history;

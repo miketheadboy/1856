@@ -455,7 +455,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
         EventKind::Pastime { what, amount } => {
             use super::life::{Find, Pastime};
             match what {
-                Pastime::Chores => "[HOME] You kept the place: hens, the cow, the garden".into(),
+                Pastime::Chores(task) => format!("[FARM] A day of {}", task.label()),
                 Pastime::Fished => match amount {
                     0 => "[CREEK] Nothing biting on the Wakarusa".into(),
                     n => format!("[CREEK] You took {n} catfish out of the Wakarusa"),
@@ -556,6 +556,14 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
         EventKind::Festival { holiday, crowd } => {
             format!("[{}] {} turned out", holiday.label().to_uppercase(), crowd)
         }
+        EventKind::Strayed { owner } => format!(
+            "[STOCK] A cow is gone from the {} place",
+            surname(world, owner)
+        ),
+        EventKind::StockStarved { family, head } => format!(
+            "[STOCK] The {} hay ran out; {} head died on the prairie",
+            world.families[family as usize].surname, head
+        ),
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),

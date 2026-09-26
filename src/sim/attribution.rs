@@ -45,6 +45,7 @@ pub fn victim_of(world: &World, event: EventId) -> Option<NpcId> {
         EventKind::Fire { owner, .. } => Some(owner),
         EventKind::Death { victim, .. } => Some(victim),
         EventKind::Theft { victim, .. } => Some(victim),
+        EventKind::Strayed { owner } => Some(owner),
         EventKind::Wounded { victim, .. } => Some(victim),
         EventKind::Cruelty {
             victim,
@@ -105,6 +106,16 @@ pub fn candidates(
     }
 
     match ev.kind {
+        // A good fence makes the owner more suspicious, not less.
+        EventKind::Strayed { .. } => {
+            let fences = world.families[victim_family as usize].stores.work.fences;
+            out.push(Candidate {
+                suspect: Suspect::Accident,
+                score: 20.0 + 40.0 * (1.0 - fences) + rumor_for(Suspect::Accident),
+                reason: "it got through the fence",
+                parts: Vec::new(),
+            });
+        }
         EventKind::Cruelty {
             act: Cruelty::KillStock,
             ..
