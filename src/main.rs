@@ -443,6 +443,9 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                     ),
                     (Action::Do(Activity::FileClaim), "FILE CLAIM", gray),
                     (Action::Do(Activity::Study), "STUDY", gray),
+                    (Action::Do(Activity::Trap), "TRAP", green),
+                    (Action::Do(Activity::Camp), "CAMP", green),
+                    (Action::Do(Activity::WriteHome), "WRITE HOME", gray),
                     (Action::Leave(Errand::Buffalo), "LEAVE A WHILE", gray),
                 ],
             );

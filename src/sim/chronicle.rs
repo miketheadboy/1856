@@ -42,6 +42,15 @@ fn cause_label(world: &World, cause: FireCause) -> String {
     }
 }
 
+/// The Finches, the Pikes.
+pub fn plural(surname: &str) -> String {
+    if surname.ends_with("ch") || surname.ends_with('s') || surname.ends_with("sh") {
+        format!("{surname}es")
+    } else {
+        format!("{surname}s")
+    }
+}
+
 fn surname(world: &World, id: NpcId) -> &'static str {
     world.family_of(id).surname
 }
@@ -477,6 +486,30 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Pastime::Visited(n) => format!("[VISIT] You sat a spell with {}", who(world, n)),
                 Pastime::Courted(n) => format!("[COURTING] You called on {}", who(world, n)),
                 Pastime::Built(p) => format!("[WORK] You gave a day to the {}", p.label()),
+                Pastime::Trapped { beaver } => match (amount, beaver) {
+                    (0, 0) => "[TRAPLINE] You set your traps along the creek".into(),
+                    (m, 0) => format!("[TRAPLINE] {m} muskrat on the line"),
+                    (m, _) => format!("[TRAPLINE] {m} muskrat and a beaver"),
+                },
+                Pastime::Camped(sight) => {
+                    use super::life::Sight;
+                    match sight {
+                        Sight::Stars => "[NIGHT] You slept out under the stars".into(),
+                        Sight::Wisp => {
+                            "[NIGHT] A light moved on the bottoms, and moved away when you did"
+                                .into()
+                        }
+                        Sight::Spirit(s) => {
+                            format!("[NIGHT] You saw {} where it happened", world.name(s))
+                        }
+                        Sight::Riders { rider, toward } => format!(
+                            "[NIGHT] {} riding toward the {} place, late",
+                            rider.map_or("Someone".to_string(), |r| world.name(r).to_string()),
+                            world.families[toward as usize].surname
+                        ),
+                    }
+                }
+                Pastime::WroteHome => "[LETTER] You wrote home".into(),
             }
         }
         EventKind::Sermon { preacher, flock } => format!(
@@ -564,6 +597,38 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             "[STOCK] The {} hay ran out; {} head died on the prairie",
             world.families[family as usize].surname, head
         ),
+        EventKind::Letter {
+            family,
+            letter,
+            reader,
+        } => {
+            use super::mail::Letter;
+            let what = match letter {
+                Letter::Money(d) => format!("${d} from home"),
+                Letter::BadNews => "a death back home".into(),
+                Letter::KinComing => "kin coming out in the spring".into(),
+                Letter::Homesick => "asking when they'll come home".into(),
+            };
+            let read = reader
+                .map(|r| format!(", read to them by {}", who(world, r)))
+                .unwrap_or_default();
+            if family == 0 {
+                format!("[MAIL] A letter for you: {what}{read}")
+            } else {
+                format!(
+                    "[MAIL] A letter for the {}: {what}{read}",
+                    plural(world.families[family as usize].surname)
+                )
+            }
+        }
+        EventKind::KinArrived { family, newcomer } => match newcomer {
+            Some(n) => format!(
+                "[ARRIVAL] {} came out from the States to the {} place",
+                world.name(n),
+                world.families[family as usize].surname
+            ),
+            None => "[ARRIVAL] Kin were expected, and didn't come".into(),
+        },
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),

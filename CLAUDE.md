@@ -46,9 +46,10 @@ Sim modules (`src/sim/`):
 | `reconcile` | the better way: mercy at the moment of the act, barn raisings (a rival among the hands), apologies, condolence at a child's grave, enemy-of-my-enemy, feuds that starve, truces, the player's broker verb |
 | `family` | kin and absence: errands (buffalo, fishing, courting, town, drinking) take the player away; harm at home while away costs kin's regard |
 | `farmwork` | the farm year: plow, plant (almanac folk wait for the moon and plant late), hay, picking corn before December, butchering, fences; strays feed attribution; short hay kills stock |
-| `life` | the player's days: one activity a day (chores, fish, roam, visit, court, drink, preach, baptize, speech, build, file a claim, study), eight skills that grow by doing, spirits, Jones-style goals, emergent paths (preacher, souse, rake, silver tongue, vagabond, pillar...) |
+| `life` | the player's days: one activity a day (chores, fish, roam, trap, camp, visit, court, drink, preach, baptize, speech, build, file a claim, study, write home), eight skills that grow by doing, spirits, Jones-style goals, emergent paths (preacher, souse, rake, silver tongue, vagabond, pillar...) |
 | `romance` | couples, courtship, seduction, affairs, scandal, marriages that make in-laws (and end feuds) |
 | `civic` | county projects (schoolhouse, bridge, lyceum), the Lecompton land office and claim jumpers, festivals |
+| `mail` | the Lawrence post office on Wednesdays (not through a blockade): money, deaths back home, kin coming out (new household members); the unlettered need a neighbor to read, who then knows their business |
 | `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |
 | `chronicle` | text for every event; cascade trees; lineage; "wars nobody started" |

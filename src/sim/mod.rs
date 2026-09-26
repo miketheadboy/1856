@@ -19,6 +19,7 @@ pub mod ghosts;
 pub mod history;
 pub mod institutions;
 pub mod life;
+pub mod mail;
 pub mod market;
 pub mod mortality;
 pub mod nations;

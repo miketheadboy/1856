@@ -518,6 +518,50 @@ impl World {
         world
     }
 
+    /// Someone new joins a household: kin come out from back east, a baby
+    /// is born. Temperament and body are rolled like everyone else's.
+    pub fn add_npc(&mut self, family: FamilyId, first: &str, age: u8) -> NpcId {
+        let faction = self.families[family as usize].faction;
+        let surname = self.families[family as usize].surname;
+        let conviction = 0.2 + self.rng.unit() * 0.8;
+        let temperament = Temperament::roll(&mut self.rng);
+        let body = Body::roll(&mut self.rng, age);
+        let hidden = Hidden::roll(&mut self.rng);
+        let id = self.npcs.len() as NpcId;
+        self.npcs.push(Npc {
+            id,
+            name: format!("{first} {surname}"),
+            family,
+            faction,
+            alive: true,
+            memories: Vec::new(),
+            alibi: None,
+            plotting: None,
+            violence: 0,
+            last_revenge: None,
+            age,
+            health: 100,
+            emotions: Emotions::default(),
+            temperament,
+            body,
+            ideology: Ideology::for_faction(faction, conviction),
+            wounded: false,
+            hidden,
+            adopted_by: None,
+        });
+        id
+    }
+
+    /// Plots and plans due in the next `days` (for night witnesses, not for
+    /// the view: the player never sees these directly).
+    pub fn upcoming(&self, days: u32) -> Vec<EventKind> {
+        self.scheduled
+            .iter()
+            .filter(|s| s.day.0 <= self.day.0 + days)
+            .map(|s| s.kind.clone())
+            .collect()
+    }
+
     // ---- lookups -------------------------------------------------------
 
     pub fn npc(&self, id: NpcId) -> &Npc {
@@ -710,6 +754,7 @@ impl World {
         super::mortality::daily(self);
         super::family::daily(self);
         super::farmwork::daily(self);
+        super::mail::daily(self);
         super::civic::daily(self);
         super::life::daily(self);
         systems::spread_gossip(self);

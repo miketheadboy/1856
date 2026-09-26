@@ -381,6 +381,18 @@ pub enum EventKind {
         family: FamilyId,
         head: u8,
     },
+    /// The mail came up from Westport.
+    Letter {
+        family: FamilyId,
+        letter: super::mail::Letter,
+        /// A neighbor who read it to them, if nobody at home could.
+        reader: Option<NpcId>,
+    },
+    /// Kin from back east arrive.
+    KinArrived {
+        family: FamilyId,
+        newcomer: Option<NpcId>,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,
