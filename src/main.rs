@@ -13,6 +13,7 @@ use bleeding_kansas::sim::events::Source;
 use bleeding_kansas::sim::family::{self, Errand};
 use bleeding_kansas::sim::farmwork;
 use bleeding_kansas::sim::geography::{self, HEIGHT, PLACES, Terrain, WIDTH};
+use bleeding_kansas::sim::law;
 use bleeding_kansas::sim::life::{self, Activity, Skill};
 use bleeding_kansas::sim::market::Good;
 use bleeding_kansas::sim::nations::NationId;
@@ -114,6 +115,7 @@ enum Action {
     Visit,
     Court,
     Baptize,
+    Sue,
 }
 
 fn main() {
@@ -446,6 +448,19 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                     (Action::Do(Activity::Trap), "TRAP", green),
                     (Action::Do(Activity::Camp), "CAMP", green),
                     (Action::Do(Activity::WriteHome), "WRITE HOME", gray),
+                    (Action::Sue, "SUE", gray),
+                    (Action::Do(Activity::Vote { sell: false }), "VOTE", blue),
+                    (
+                        Action::Do(Activity::Vote { sell: true }),
+                        "SELL VOTE",
+                        brown,
+                    ),
+                    (Action::Do(Activity::Muster { join: true }), "MUSTER", red),
+                    (
+                        Action::Do(Activity::Muster { join: false }),
+                        "STAY HOME",
+                        gray,
+                    ),
                     (Action::Leave(Errand::Buffalo), "LEAVE A WHILE", gray),
                 ],
             );
@@ -617,6 +632,9 @@ fn handle_actions(
             }
             (Action::Baptize, Some(t)) => {
                 w.player_do(Activity::Baptize(t));
+            }
+            (Action::Sue, Some(t)) => {
+                w.player_do(Activity::Sue(t));
             }
             (Action::Broker, Some(t)) => {
                 // Between the selected family and whoever it's feuding with.
@@ -906,7 +924,18 @@ fn your_life(world: &World) -> String {
     } else if l.acted_on == Some(world.day) {
         s.push_str("Your day is spent.\n");
     }
-    s.push_str("Click a neighbor to visit, court, or baptize.");
+    if let Some(e) = law::election_today(world) {
+        s.push_str(&format!("ELECTION DAY: {}.\n", e.name));
+    }
+    if let Some((i, _, _)) = &world.law.muster
+        && !world.law.player_answered
+    {
+        s.push_str(&format!(
+            "THE MUSTER IS CALLED: {}.\n",
+            law::MUSTERS[*i].name
+        ));
+    }
+    s.push_str("Click a neighbor to visit, court, baptize, or sue.");
     s
 }
 

@@ -230,6 +230,8 @@ pub struct World {
     pub life: super::life::Life,
     /// Community projects, land-office claims.
     pub civic: super::civic::Civic,
+    /// The justice of the peace, open disputes, the current muster.
+    pub law: super::law::Law,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -475,6 +477,7 @@ impl World {
             hearts: super::romance::Hearts::default(),
             life: super::life::Life::default(),
             civic: super::civic::Civic::default(),
+            law: super::law::Law::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -515,6 +518,7 @@ impl World {
         }
         world.roll_weather();
         world.civic = super::civic::Civic::founding(&mut world);
+        world.law = super::law::Law::founding(&world);
         world
     }
 
@@ -755,6 +759,7 @@ impl World {
         super::family::daily(self);
         super::farmwork::daily(self);
         super::mail::daily(self);
+        super::law::daily(self);
         super::civic::daily(self);
         super::life::daily(self);
         systems::spread_gossip(self);
@@ -974,6 +979,7 @@ impl World {
         super::institutions::monthly(self);
         super::reconcile::monthly(self);
         super::romance::monthly(self);
+        super::law::monthly(self);
         super::civic::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);

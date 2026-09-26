@@ -42,7 +42,7 @@ fn mail_runs(world: &World) -> bool {
 
 /// Mail day is Wednesday, when the Westport hack came in.
 pub fn daily(world: &mut World) {
-    if world.day.0 % 7 != 0 || !mail_runs(world) {
+    if !world.day.0.is_multiple_of(7) || !mail_runs(world) {
         return;
     }
     for f in 0..world.families.len() {

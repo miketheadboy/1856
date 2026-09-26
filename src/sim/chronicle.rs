@@ -629,6 +629,62 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             ),
             None => "[ARRIVAL] Kin were expected, and didn't come".into(),
         },
+        EventKind::Lawsuit {
+            plaintiff,
+            defendant,
+            judge,
+            acres,
+            won,
+        } => format!(
+            "[COURT] {} sued {} over {} acres before Justice {}, and {}",
+            capitalize(&who(world, plaintiff)),
+            who(world, defendant),
+            acres,
+            world.name(judge),
+            if won { "won" } else { "lost" }
+        ),
+        EventKind::Election {
+            index,
+            free_state,
+            pro_slavery,
+            missourians,
+        } => {
+            let e = &super::law::ELECTIONS[index as usize];
+            let mo = if missourians > 0 {
+                format!(", {missourians} of them Missourians")
+            } else {
+                String::new()
+            };
+            let fraud = if e.fraud_rejected {
+                ". The Governor threw out the fraudulent returns"
+            } else {
+                ""
+            };
+            format!(
+                "[ELECTION] The vote on {}: {} Free-State, {} Pro-Slavery{}{}",
+                e.name, free_state, pro_slavery, mo, fraud
+            )
+        }
+        EventKind::VoteSold { seller } => format!(
+            "[ELECTION] Word is {} sold a vote at the store",
+            who(world, seller)
+        ),
+        EventKind::Muster {
+            index,
+            joined,
+            dodged,
+            wounded,
+        } => format!(
+            "[MUSTER] {}: {} rode out, {} stayed home{}",
+            super::law::MUSTERS[index as usize].name,
+            joined,
+            dodged,
+            if wounded > 0 {
+                format!(", {wounded} came back shot")
+            } else {
+                String::new()
+            }
+        ),
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),

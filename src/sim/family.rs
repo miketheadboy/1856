@@ -19,6 +19,8 @@ pub enum Errand {
     Town,
     /// At the groggery. Kin take the dimmest view.
     Drinking,
+    /// Answered the muster. Half the county thinks that's duty.
+    Militia,
 }
 
 impl Errand {
@@ -29,6 +31,7 @@ impl Errand {
             Errand::Courting => 4,
             Errand::Town => 2,
             Errand::Drinking => 3,
+            Errand::Militia => super::law::SERVICE_DAYS,
         }
     }
 
@@ -40,6 +43,7 @@ impl Errand {
             Errand::Fishing => 0.9,
             Errand::Courting => 1.2,
             Errand::Drinking => 1.5,
+            Errand::Militia => 0.5,
         }
     }
 
@@ -50,6 +54,7 @@ impl Errand {
             Errand::Courting => "off courting",
             Errand::Town => "in town",
             Errand::Drinking => "at the groggery",
+            Errand::Militia => "off with the militia",
         }
     }
 }

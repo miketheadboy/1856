@@ -98,6 +98,16 @@ pub enum Activity {
     Camp,
     /// A letter to the folks back home.
     WriteHome,
+    /// Take a claim jumper before the justice of the peace.
+    Sue(NpcId),
+    /// Election day: cast your ballot, or sell it at the store.
+    Vote {
+        sell: bool,
+    },
+    /// Answer the muster call, or refuse it to their faces.
+    Muster {
+        join: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,6 +163,8 @@ pub struct Life {
     pub trapline: u8,
     /// Letters sent since the last mail came back.
     pub wrote_home: u8,
+    /// How you voted, and when.
+    pub ballot: Option<(Day, super::law::Ballot)>,
 }
 
 impl Default for Life {
@@ -168,6 +180,7 @@ impl Default for Life {
             built: 0,
             trapline: 0,
             wrote_home: 0,
+            ballot: None,
         }
     }
 }
@@ -302,6 +315,29 @@ pub fn act(world: &mut World, what: Activity) -> bool {
             }
             ok
         }
+        Activity::Sue(defendant) => {
+            let letters = world.life.skill(Skill::Letters);
+            let heard = super::law::sue(world, PLAYER, defendant, letters);
+            if heard {
+                world.life.learn(Skill::Letters, 2.0);
+                world.life.learn(Skill::Oratory, 1.0);
+                family::leave_for(world, Errand::Town, 1);
+            }
+            heard
+        }
+        Activity::Vote { sell } => vote(world, sell),
+        Activity::Muster { join } => {
+            let open = world.law.muster.is_some() && !world.law.player_answered;
+            if !open || !super::law::eligible(world, PLAYER) {
+                return false;
+            }
+            world.law.player_answered = true;
+            if join {
+                super::law::join(world, PLAYER);
+                family::leave(world, Errand::Militia);
+            }
+            true
+        }
         Activity::Trap => trap(world),
         Activity::Camp => camp(world),
         Activity::WriteHome => {
@@ -349,6 +385,33 @@ fn chores(world: &mut World) -> bool {
     // Drudgery, unless you've come to love it.
     world.life.cheer(-1.0 + 4.0 * farming);
     pastime(world, Pastime::Chores(task), 1);
+    true
+}
+
+fn vote(world: &mut World, sell: bool) -> bool {
+    use super::law::{Ballot, Poll};
+    let Some(e) = super::law::election_today(world) else {
+        return false;
+    };
+    let faction = world.npc(PLAYER).faction;
+    let ballot = if sell {
+        if e.poll != Poll::Territorial {
+            return false; // nobody buys a Topeka ballot
+        }
+        world.families[0].stores.cash += 3;
+        if world.rng.chance(0.3) {
+            world.emit_root(EventKind::VoteSold { seller: PLAYER }, None);
+        }
+        Ballot::Sold
+    } else {
+        // At a territorial poll the Missourians are waiting.
+        if e.poll == Poll::Territorial && faction == Faction::FreeState {
+            world.npc_mut(PLAYER).emotions.fear += 15.0;
+        }
+        Ballot::Voted(faction)
+    };
+    world.life.ballot = Some((world.day, ballot));
+    family::leave_for(world, Errand::Town, 1);
     true
 }
 

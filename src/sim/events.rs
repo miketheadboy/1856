@@ -393,6 +393,32 @@ pub enum EventKind {
         family: FamilyId,
         newcomer: Option<NpcId>,
     },
+    /// A case before the justice of the peace.
+    Lawsuit {
+        plaintiff: NpcId,
+        defendant: NpcId,
+        judge: NpcId,
+        acres: u8,
+        won: bool,
+    },
+    /// The count at this precinct.
+    Election {
+        index: u8,
+        free_state: u16,
+        pro_slavery: u16,
+        missourians: u16,
+    },
+    /// A vote bought at the store, found out.
+    VoteSold {
+        seller: NpcId,
+    },
+    /// A muster closes: who went, who stayed home, who came back hurt.
+    Muster {
+        index: u8,
+        joined: u8,
+        dodged: u8,
+        wounded: u8,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

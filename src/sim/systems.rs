@@ -40,6 +40,7 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::civic::on_event(world, ev);
     super::life::on_event(world, ev);
     super::mail::on_event(world, ev);
+    super::law::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
