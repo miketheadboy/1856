@@ -11,9 +11,12 @@ use bleeding_kansas::sim::world::{PLAYER, World};
 use bleeding_kansas::sim::{family, law};
 
 use crate::cmds::{self, Cmd, MenuSpec, item};
+use crate::duel::Approach;
 use crate::scenery::Art;
 use crate::ui::{LIGHT, Menu};
 use crate::{Fonts, Sim, text};
+use bleeding_kansas::sim::action;
+use bleeding_kansas::sim::events::Retaliation;
 
 #[derive(Resource, Default)]
 pub struct Scenes {
@@ -82,7 +85,6 @@ pub fn setup(mut commands: Commands, fonts: Res<Fonts>) {
             s.spawn((
                 ImageNode::default(),
                 Node {
-                    width: Val::Px(240.0),
                     height: Val::Px(200.0),
                     margin: UiRect::top(Val::Px(14.0)),
                     ..default()
@@ -128,6 +130,84 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
             });
         }
         return None;
+    }
+
+    if let Some(s) = &world.action.standoff {
+        let key = format!("standoff {} {}", s.actor, s.day.0);
+        if unseen(&key, scenes) {
+            let name = world.name(s.actor).to_string();
+            let company = match s.riders.len() {
+                0 => "alone".to_string(),
+                _ => format!(
+                    "with {}",
+                    s.riders
+                        .iter()
+                        .map(|&r| world.name(r).to_string())
+                        .collect::<Vec<_>>()
+                        .join(" and ")
+                ),
+            };
+            let quick = action::their_draw(world, s.actor);
+            let hand = if quick < 0.36 {
+                "His hand is quick. Very quick."
+            } else if quick < 0.5 {
+                "He knows which end of a gun is which."
+            } else {
+                "He's no gunman, and knows it."
+            };
+            let nerve = if action::nerve(world) > 0.2 {
+                "Your hands are steady."
+            } else {
+                "Your mouth is dry."
+            };
+            let (title, body, stand) = if s.yours {
+                (
+                    format!(
+                        "At the {} door",
+                        world.families[world.npc(s.actor).family as usize].surname
+                    ),
+                    format!(
+                        "{name} comes out onto the step and doesn't ask you in. {hand} {nerve}"
+                    ),
+                    "Lose your nerve and ride home",
+                )
+            } else {
+                (
+                    "Riders at the gate".to_string(),
+                    format!(
+                        "{name}, {company}, {}. {hand} {nerve}",
+                        match s.method {
+                            Retaliation::Arson => "and a torch burning in the damp",
+                            Retaliation::Ambush => "a rifle across the saddle",
+                        }
+                    ),
+                    "Stand aside",
+                )
+            };
+            let woman = bleeding_kansas::sim::world::is_woman(&name);
+            let body = crate::panels::gendered(&body, woman);
+            return Some(Moment {
+                key,
+                title,
+                art: art.gunman.clone(),
+                spec: MenuSpec::new(
+                    name,
+                    body,
+                    vec![
+                        item(
+                            crate::panels::gendered("Talk him down", woman),
+                            Cmd::Standoff(Approach::Talk),
+                        ),
+                        item(
+                            crate::panels::gendered("Face him down", woman),
+                            Cmd::Standoff(Approach::Face),
+                        ),
+                        item("Go for your gun", Cmd::Standoff(Approach::Draw)),
+                        item(stand, Cmd::StandAside),
+                    ],
+                ),
+            });
+        }
     }
 
     if let Some(id) = world.railroad.at_door {
@@ -307,10 +387,19 @@ pub fn run(
     mut root: Query<&mut Node, With<SceneRoot>>,
     mut img: Query<&mut ImageNode, With<SceneArt>>,
     mut title: Query<&mut Text, With<SceneTitle>>,
+    game: Res<crate::duel::Game>,
+    state: Res<State<crate::Screen>>,
 ) {
     let Ok(mut node) = root.single_mut() else {
         return;
     };
+    if game.active() || *state.get() == crate::Screen::Raid {
+        if scenes.showing && !menu.is_open() {
+            scenes.showing = false;
+            node.display = Display::None;
+        }
+        return;
+    }
     if scenes.showing {
         if !menu.is_open() {
             scenes.showing = false;

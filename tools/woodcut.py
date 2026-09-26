@@ -385,6 +385,79 @@ def ballot():
     save(img, "ballot", (96, 80))
 
 
+def horse(d, img, x=0.0):
+    body = [(x + 6, 12), (x + 22, 12), (x + 24, 18), (x + 5, 18)]
+    poly(d, body)
+    hatch(img, body, spacing=1.8, angle=60, width=0.4)
+    d = ImageDraw.Draw(img)
+    poly(d, [(x + 21, 13), (x + 25, 6), (x + 29, 7), (x + 28, 9), (x + 25, 10), (x + 24, 15)])
+    for lx in (7, 10, 19, 22):
+        line(d, (x + lx, 18), (x + lx + (0.8 if lx % 2 else -0.6), 27), 1.1)
+    line(d, (x + 6, 13), (x + 2, 20), 1.0)  # tail
+    return d
+
+
+def rider():
+    """A man on horseback, riding right."""
+    img = canvas(32, 28)
+    d = ImageDraw.Draw(img)
+    d = horse(d, img)
+    # the man
+    d.ellipse(pts([(12.5, 1.5), (15.5, 4.5)]), fill=PAPER, outline=INK, width=int(0.8 * S))
+    line(d, (10.5, 1.8), (17.5, 1.8), 1.0)
+    poly(d, [(12.5, 0), (15.5, 0), (15.5, 1.8), (12.5, 1.8)], fill=INK)
+    poly(d, [(12, 4.5), (16, 4.5), (16.5, 11), (11.5, 11)])
+    line(d, (13, 11), (15, 16), 1.2)
+    line(d, (16, 6), (24, 3), 0.9)  # rifle across the pommel
+    save(img, "rider", (96, 84))
+
+
+def gunman():
+    """A man standing square with a rifle at port arms."""
+    img = canvas(12, 20)
+    d = ImageDraw.Draw(img)
+    d.ellipse(pts([(4.5, 3), (7.5, 6)]), fill=PAPER, outline=INK, width=int(0.8 * S))
+    line(d, (2.5, 3), (9.5, 3), 1.0)
+    poly(d, [(4.5, 1), (7.5, 1), (7.5, 3), (4.5, 3)], fill=INK)
+    coat = [(3.5, 6), (8.5, 6), (9.5, 14), (2.5, 14)]
+    poly(d, coat)
+    hatch(img, coat, spacing=2.0, angle=80, width=0.35)
+    d = ImageDraw.Draw(img)
+    line(d, (4.5, 14), (4, 19.5), 1.3)
+    line(d, (7.5, 14), (8, 19.5), 1.3)
+    line(d, (1.5, 13), (11, 6.5), 1.1)  # rifle
+    save(img, "gunman", (72, 120))
+
+
+def dog():
+    img = canvas(16, 10)
+    d = ImageDraw.Draw(img)
+    body = [(3, 3), (11, 3), (12, 6), (3, 6)]
+    poly(d, body)
+    hatch(img, body, spacing=1.4, angle=30, width=0.35)
+    d = ImageDraw.Draw(img)
+    poly(d, [(11, 3), (13, 0.5), (15.5, 2), (14, 4), (12, 5)])
+    for lx in (4, 5.5, 10, 11.5):
+        line(d, (lx, 6), (lx, 9.5), 0.9)
+    line(d, (3, 3.5), (0.5, 1), 0.8)
+    save(img, "dog", (32, 20))
+
+
+def cow():
+    img = canvas(22, 14)
+    d = ImageDraw.Draw(img)
+    body = [(3, 3), (17, 3), (18, 9), (3, 9)]
+    poly(d, body)
+    for spot in ([(6, 4), (9, 4), (9, 7), (6, 7)], [(12, 5), (15, 5), (14, 8), (12, 8)]):
+        poly(d, spot, fill=INK, width=0.4)
+    poly(d, [(17, 3), (20, 2.5), (21.5, 5), (19, 7), (17.5, 6)])
+    line(d, (19, 2.5), (20, 1), 0.6)
+    for lx in (4.5, 6.5, 14.5, 16.5):
+        line(d, (lx, 9), (lx, 13.5), 1.0)
+    line(d, (3, 3.5), (1.5, 8), 0.6)
+    save(img, "cow", (44, 28))
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     cabin()
@@ -419,4 +492,8 @@ if __name__ == "__main__":
     cross()
     rifles()
     ballot()
+    rider()
+    gunman()
+    dog()
+    cow()
     print("wrote", sorted(os.listdir(OUT)))

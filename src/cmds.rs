@@ -2,10 +2,10 @@
 //! applies right now, and what it does to the sim. The view never decides an
 //! outcome; it forwards a verb and reports what the chronicle says happened.
 
+use bleeding_kansas::sim::action;
 use bleeding_kansas::sim::chronicle;
 use bleeding_kansas::sim::civic::Project;
 use bleeding_kansas::sim::economy::Choice;
-use bleeding_kansas::sim::events::Cruelty;
 use bleeding_kansas::sim::family;
 use bleeding_kansas::sim::farmwork;
 use bleeding_kansas::sim::homestead::{self, Improvement};
@@ -17,6 +17,7 @@ use bleeding_kansas::sim::psyche::LifeStage;
 use bleeding_kansas::sim::railroad::{Answer, Status};
 use bleeding_kansas::sim::world::{NpcId, World};
 
+use crate::duel::Approach;
 use crate::{Screen, TownId};
 
 /// Which submenu to open.
@@ -39,10 +40,17 @@ pub enum Cmd {
     Buy(Good, f32),
     Sell(Good, f32),
     Sign(bool),
-    Kill(NpcId),
-    Burn(NpcId),
-    Steal(NpcId),
     Broker(NpcId),
+    /// Meet the man at the gate (or at his door) this way.
+    Standoff(Approach),
+    /// Stand aside and let him do what he came to do.
+    StandAside,
+    /// Ride to their door and have it out.
+    Confront(NpcId),
+    /// Slip onto their place tonight.
+    Raid(NpcId),
+    /// Lie in wait on their road tonight.
+    Ambush(NpcId),
     BeSeen,
     /// Sleep till morning: the day ends now.
     Rest,
@@ -93,9 +101,18 @@ impl MenuSpec {
     }
 }
 
+/// A game to play by hand.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Play {
+    Standoff(Approach),
+    Raid(NpcId),
+    Ambush(NpcId),
+}
+
 /// What running a command did.
 #[derive(Default)]
 pub struct Outcome {
+    pub play: Option<Play>,
     pub toast: Option<String>,
     pub next: Option<MenuSpec>,
     pub goto: Option<(Screen, Option<TownId>)>,
@@ -139,15 +156,30 @@ pub fn run(world: &mut World, cmd: Cmd) -> Outcome {
             world.player_answer_favor(yes);
             true
         }
-        Cmd::Kill(t) => {
-            world.player_kill(t);
+        Cmd::Standoff(a) => {
+            out.play = Some(Play::Standoff(a));
+            return out;
+        }
+        Cmd::StandAside => {
+            action::back_down(world);
             true
         }
-        Cmd::Burn(t) => {
-            world.player_burn(t);
-            true
+        Cmd::Confront(t) => {
+            if !action::confront(world, t) {
+                return toast("Not today.");
+            }
+            return out;
         }
-        Cmd::Steal(t) => world.player_steal(t),
+        Cmd::Raid(t) | Cmd::Ambush(t) => {
+            if !action::night_free(world) {
+                return toast("You've been out once tonight. Once is plenty.");
+            }
+            out.play = Some(match cmd {
+                Cmd::Raid(_) => Play::Raid(t),
+                _ => Play::Ambush(t),
+            });
+            return out;
+        }
         Cmd::Broker(t) => {
             let fam = world.npc(t).family;
             let other = world
@@ -241,6 +273,11 @@ pub fn neighbor(world: &World, t: NpcId) -> MenuSpec {
             free,
         ));
     }
+    items.push(when(
+        "Have it out with them",
+        Cmd::Confront(t),
+        free && grown && world.action.standoff.is_none(),
+    ));
     items.push(item("After dark...", Cmd::Open(Sub::AfterDark(t))));
     items.push(item("Leave them be", Cmd::Close));
     MenuSpec::new(n.name.clone(), crate::panels::inspect(world, t), items)
@@ -248,34 +285,26 @@ pub fn neighbor(world: &World, t: NpcId) -> MenuSpec {
 
 fn after_dark(world: &World, t: NpcId) -> MenuSpec {
     let free = day_free(world);
+    let night = action::night_free(world);
     let leverage = intrigue::held(world, t).is_some();
+    let plan = action::raid_plan(world, t);
+    let what = plan
+        .as_ref()
+        .map(|p| {
+            p.objectives
+                .iter()
+                .map(|o| o.label())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
     let items = vec![
         when(
-            "Put their barn to the torch",
-            Cmd::Burn(t),
-            world.player_alive(),
+            "Slip onto their place",
+            Cmd::Raid(t),
+            night && plan.is_some(),
         ),
-        when("Drive off a cow", Cmd::Steal(t), world.player_alive()),
-        when(
-            "Shoot a cow and leave it",
-            Cmd::Do(Activity::Sabotage(t, Cruelty::KillStock)),
-            free,
-        ),
-        when(
-            "A carcass down the well",
-            Cmd::Do(Activity::Sabotage(t, Cruelty::FoulWell)),
-            free,
-        ),
-        when(
-            "Pull the fence rails",
-            Cmd::Do(Activity::Sabotage(t, Cruelty::CutFence)),
-            free,
-        ),
-        when(
-            "Wet the haystack",
-            Cmd::Do(Activity::Sabotage(t, Cruelty::SpoilHay)),
-            free,
-        ),
+        when("Lie in wait on their road", Cmd::Ambush(t), night),
         when("Whisper against them", Cmd::Do(Activity::Slander(t)), free),
         when(
             "Ask for money to keep quiet",
@@ -287,16 +316,21 @@ fn after_dark(world: &World, t: NpcId) -> MenuSpec {
             Cmd::Do(Activity::Expose(t)),
             free && leverage,
         ),
-        when(
-            "Lie in wait with a rifle",
-            Cmd::Kill(t),
-            world.player_alive(),
-        ),
         item("Think better of it", Cmd::Close),
     ];
+    let moon = world.night_light(world.day);
     MenuSpec::new(
         "After dark",
-        "The moon's what it is tonight. Whatever you do, somebody may be awake.",
+        format!(
+            "{} On their place tonight: {what}.",
+            if moon > 0.6 {
+                "A bright moon. You'll see well, and be seen."
+            } else if moon > 0.25 {
+                "Some moon, some cloud."
+            } else {
+                "Dark of the moon. Good for the wicked and the careful."
+            }
+        ),
         items,
     )
 }

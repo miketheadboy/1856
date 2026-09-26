@@ -73,6 +73,8 @@ pub enum Overlay {
     None,
     Status(usize),
     Paper,
+    /// A game played by hand: a standoff, an ambush.
+    Action,
 }
 
 /// Anything open that should stop the clock and the feet.
@@ -258,7 +260,8 @@ pub fn setup(mut commands: Commands, fonts: Res<Fonts>) {
 
 /// Keyboard and mouse for the open window.
 pub fn drive_menu(
-    keys: Res<ButtonInput<KeyCode>>,
+    mut keys: ResMut<ButtonInput<KeyCode>>,
+    mut mouse: ResMut<ButtonInput<MouseButton>>,
     mut menu: ResMut<Menu>,
     mut rows: Query<(&Interaction, &MenuRow), Changed<Interaction>>,
     mut sim: ResMut<Sim>,
@@ -267,6 +270,9 @@ pub fn drive_menu(
     mut clock: ResMut<Clock>,
     mut next: ResMut<NextState<Screen>>,
     mut town: ResMut<TownId>,
+    mut game: ResMut<crate::duel::Game>,
+    mut raid: ResMut<crate::raid::Raid>,
+    time: Res<Time>,
 ) {
     let Some(spec) = menu.spec.clone() else {
         return;
@@ -319,6 +325,12 @@ pub fn drive_menu(
     if !it.enabled {
         return;
     }
+    // One press, one thing: the key that chose this doesn't also reach
+    // whatever's standing behind the window.
+    for k in [KeyCode::Enter, KeyCode::KeyE, KeyCode::Space] {
+        keys.clear_just_pressed(k);
+    }
+    mouse.clear_just_pressed(MouseButton::Left);
     let out = cmds::run(&mut sim.0, it.cmd);
     menu.close();
     if let Some(t) = out.toast {
@@ -333,6 +345,21 @@ pub fn drive_menu(
     if out.rest {
         sim.0.advance_day();
         clock.timer.reset();
+    }
+    match out.play {
+        Some(cmds::Play::Standoff(a)) => game.start(&sim.0, a, time.elapsed_secs_f64()),
+        Some(cmds::Play::Ambush(t)) => {
+            if let Some(plan) = bleeding_kansas::sim::action::ambush_plan(&sim.0, t) {
+                game.ambush(&sim.0, plan, time.elapsed_secs_f64());
+            }
+        }
+        Some(cmds::Play::Raid(t)) => {
+            if let Some(plan) = bleeding_kansas::sim::action::raid_plan(&sim.0, t) {
+                raid.plan = Some(plan);
+                next.set(Screen::Raid);
+            }
+        }
+        None => {}
     }
     if let Some((screen, t)) = out.goto {
         if let Some(t) = t {
@@ -452,6 +479,7 @@ pub fn draw_hud(
                 Screen::County => "Douglas County, K.T.".to_string(),
                 Screen::Claim => "Your claim".to_string(),
                 Screen::Town => town.name().to_string(),
+                Screen::Raid => "Someone else's place, at night".to_string(),
             },
             Hud::Purse => {
                 let people = world.living().filter(|n| n.family == 0).count().max(1) as f32;
@@ -470,6 +498,9 @@ pub fn draw_hud(
             Hud::Hint => match state.get() {
                 Screen::County => {
                     "Click a neighbor to deal with them. Click your claim or a town to go there. Wheel zooms, drag pans. Tab: status  N: paper  Space: pause"
+                }
+                Screen::Raid => {
+                    "WASD move   Shift: crawl   Hold E: do it   Stay out of the lantern light   Back to the road sign to leave"
                 }
                 _ => "WASD walk   E: use what's in front of you   M: county map   R: rest   Tab: status   N: paper   Space: pause",
             }
@@ -514,6 +545,12 @@ pub fn overlays(
         Or<(With<OverlayTitle>, With<OverlayTabs>, With<OverlayBody>)>,
     >,
 ) {
+    if *overlay == Overlay::Action {
+        if let Ok((mut node, ..)) = root.single_mut() {
+            node.display = Display::None;
+        }
+        return;
+    }
     if !menu.is_open() {
         if keys.just_pressed(KeyCode::Tab) {
             *overlay = match *overlay {
@@ -554,7 +591,7 @@ pub fn overlays(
     *grad = BackgroundGradient::from(LinearGradient::to_bottom(vec![top.into(), bottom.into()]));
     *edge = BorderColor::all(if paper { INK } else { EDGE });
     let (title, tabs, body) = match *overlay {
-        Overlay::None => {
+        Overlay::None | Overlay::Action => {
             node.display = Display::None;
             return;
         }

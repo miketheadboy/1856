@@ -240,6 +240,8 @@ pub struct World {
     pub land: super::land::Land,
     /// Freedom seekers, the houses that help, the men who follow.
     pub railroad: super::railroad::Railroad,
+    /// Standoffs at the gate, and who saw what the player played out.
+    pub action: super::action::Action,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -491,6 +493,7 @@ impl World {
             gatherings: super::bees::Gatherings::default(),
             land: super::land::Land::default(),
             railroad: super::railroad::Railroad::default(),
+            action: super::action::Action::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -758,6 +761,7 @@ impl World {
 
     pub fn advance_day(&mut self) {
         self.day = Day(self.day.0 + 1);
+        super::action::daily(self);
         self.roll_weather();
         self.roll_alibis();
         self.rebuild_barns();
@@ -913,6 +917,13 @@ impl World {
                     target,
                     method,
                 } => match systems::resolve_plot(self, actor, target, method, Some(s.caused_by)) {
+                    // You're home: they come to the gate, and you answer.
+                    Some(method)
+                        if target == PLAYER
+                            && super::action::park(self, actor, method, Some(s.caused_by)) =>
+                    {
+                        continue;
+                    }
                     Some(method) => EventKind::Retaliation {
                         actor,
                         target,

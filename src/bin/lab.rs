@@ -19,6 +19,8 @@
 //!                            preacher, souse, rake, orator, builder, roamer)
 //!   farm                     each family's farm year: planting, hay, corn, fences
 //!   county                   weddings, affairs, scandals, claims, projects across seeds
+//!   standoff                 the men who'd come to your gate: their draw, what drives
+//!                            them, and how often each way of meeting them works
 //!   metrics <file.csv>       daily metrics for charts
 //!   trace <file.tsv>         every event with its cascade links
 //!   time                     how long a simulated year takes
@@ -102,16 +104,98 @@ fn main() {
         "metrics" => dump(&o, "metrics.csv", debug::metrics_csv),
         "trace" => dump(&o, "trace.tsv", debug::trace_tsv),
         "time" => time(&o),
+        "standoff" => standoff(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
                 .lines()
-                .take(24)
+                .take(26)
                 .map(|l| l.trim_start_matches("//!").trim_start_matches(' '))
                 .collect::<Vec<_>>()
                 .join("\n")
         ),
     }
+}
+
+/// Phase B's terms, laid bare: who's quick, what drives them, and what works.
+fn standoff(o: &Opts) {
+    use bleeding_kansas::sim::action::{self, DrawEnd, Shot, Turn};
+    use bleeding_kansas::sim::events::Retaliation;
+    let w = World::new(o.seed);
+    println!(
+        "seed {}: the grown men and women who might come to your gate\n",
+        o.seed
+    );
+    println!(
+        "{:<22} {:>6}  {:<14} {:>8}",
+        "who", "draw", "drives", "pressure"
+    );
+    for n in w.living().filter(|n| n.family != 0 && n.age >= 16) {
+        let m = action::moods(&w, n.id);
+        let s = action::Standoff {
+            actor: n.id,
+            method: Retaliation::Arson,
+            caused_by: None,
+            day: w.day,
+            yours: false,
+            riders: Vec::new(),
+        };
+        println!(
+            "{:<22} {:>5.2}s  {:<14} {:>8.2}",
+            n.name,
+            action::their_draw(&w, n.id),
+            format!("{:?}/{:?}", m[0], m[1]),
+            action::pressure(&w, &s)
+        );
+    }
+    println!(
+        "\nyour nerve (half-width of the calm): {:.2}   your sway: {:.2}\n",
+        action::nerve(&w),
+        action::sway(&w)
+    );
+    println!("across {} seeds, a Pike at the gate:", o.seeds);
+    let mut talk = [0u32; 4];
+    let mut face = [0u32; 3];
+    let mut beaten_dead = 0;
+    for seed in 0..o.seeds as u64 {
+        let fresh = || {
+            let mut w = World::new(seed);
+            w.autopilot_player = false;
+            let t = w.head_of(4).unwrap();
+            action::park(&mut w, t, Retaliation::Ambush, None);
+            w
+        };
+        for (right, n) in talk.iter_mut().enumerate() {
+            let mut w = fresh();
+            *n += (action::talk(&mut w, right as u8, 3) == Turn::Settled) as u32;
+        }
+        for (i, g) in [0.4, 0.7, 0.95].iter().enumerate() {
+            let mut w = fresh();
+            face[i] += (action::face(&mut w, *g) == Turn::Settled) as u32;
+        }
+        let mut w = fresh();
+        action::draw(&mut w, DrawEnd::Slow);
+        beaten_dead += (!w.npc(bleeding_kansas::sim::PLAYER).alive) as u32;
+        let _ = Shot::Kill;
+    }
+    let pct = |n: u32| 100.0 * n as f32 / o.seeds as f32;
+    for (right, n) in talk.iter().enumerate() {
+        println!(
+            "  talk, {right} of 3 appeals right: settled {:.0}%",
+            pct(*n)
+        );
+    }
+    for (g, n) in [0.4, 0.7, 0.95].iter().zip(face) {
+        println!(
+            "  stare, held {:.0}%: they back off {:.0}%",
+            g * 100.0,
+            pct(n)
+        );
+    }
+    println!(
+        "  lose the draw to a man with a rifle: dead {:.0}%, wounded the rest",
+        pct(beaten_dead)
+    );
 }
 
 fn map(o: &Opts) {

@@ -284,6 +284,8 @@ fn truth_of(world: &World, event: EventId) -> Option<String> {
         EventKind::Death { killer, .. } => killer,
         EventKind::Theft { thief, .. } => Some(thief),
         EventKind::Wounded { attacker, .. } => Some(attacker),
+        EventKind::ShotAt { shooter, .. } => Some(shooter),
+        EventKind::Prowler { prowler, .. } => Some(prowler),
         EventKind::Cruelty { actor, .. } => Some(actor),
         _ => None,
     };

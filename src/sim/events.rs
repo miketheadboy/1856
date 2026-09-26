@@ -509,6 +509,29 @@ pub enum EventKind {
         cents: u32,
         rising: bool,
     },
+    /// Riders at your gate after dark. What happens next is yours to answer.
+    RidersAtGate {
+        actor: NpcId,
+        target: NpcId,
+        method: Retaliation,
+    },
+    /// How a standoff with `other` ended. `yours`: you rode to them.
+    Standoff {
+        other: NpcId,
+        end: super::action::End,
+        yours: bool,
+    },
+    /// Someone on a place in the dark. `seen`: how many saw a face.
+    Prowler {
+        prowler: NpcId,
+        victim: NpcId,
+        seen: u8,
+    },
+    /// A shot from the dark that missed. Still an attempt on a man's life.
+    ShotAt {
+        shooter: NpcId,
+        target: NpcId,
+    },
     /// Someone decided to act on a belief. Resolved by the retaliation system.
     Retaliation {
         actor: NpcId,

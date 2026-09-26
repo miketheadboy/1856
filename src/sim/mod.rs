@@ -3,6 +3,7 @@
 //! Everything here is plain Rust on plain data. The Bevy view reads from it
 //! and calls the player verbs; the headless runner just prints what happens.
 
+pub mod action;
 pub mod attribution;
 pub mod bees;
 pub mod bison;

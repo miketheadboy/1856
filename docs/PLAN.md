@@ -5,12 +5,13 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 
 ## Where it stands
 
-- 30+ sim modules, 123 tests, clippy/fmt clean, two simulated years in ~25 ms.
+- 30+ sim modules, 137 sim tests + 5 view tests, clippy/fmt clean, two simulated years in ~25 ms.
 - Balance (50 seeds, two years): a war nobody started in ~18/50, ~1 violent
   death per seed-year, harsh winters measurably worse (Phase 2 gate).
 - The Bevy view: three scales (county map, your claim on foot, town
   streets), command windows on things, letterboxed scenes, a status screen
-  and the paper. Next: Phase B, action.
+  and the paper. Phase B's action games: standoffs at the gate, raids at
+  night, ambush on the road. Next: Phase C, stockpiles and arms.
 
 ## Everything asked for, and where it went
 
@@ -36,8 +37,8 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 | seasons, weather, smoke, night, woodcut sprites, broadsheet, more Dylan | done | `scenery.rs`, `tools/woodcut.py` |
 | constructive/destructive environment | first pass done | `homestead`, `geography` (stumps, scorch) |
 | clean UI; closer and wider views; situational styles like FF7; kill the button wall | done (Phase A) | `county.rs`, `claim.rs`, `town.rs`, `walk.rs`, `scene.rs`, `ui.rs` |
-| action and violence, and how to avoid it; shows of force; stealth; assassinations; minigames | **next** | **Phase B** |
-| stockpiles, weapons, ammo, materials, crafting | planned | **Phase C** |
+| action and violence, and how to avoid it; shows of force; stealth; assassinations; minigames (fun, skill based, a little twitchy) | done (Phase B) | `action`, `duel.rs`, `raid.rs` |
+| stockpiles, weapons, ammo, materials, crafting | **next** | **Phase C** |
 | assign tasks to family/faction/hired hands; mercenaries; bounty hunters (be one or run from one) | planned | **Phase D** |
 | voice: 1850s humor, self-aware, Deadwood-ornate, ~75% Milch / 25% Heidecker–Turkington | planned | **Phase E** |
 | language quirks that spread through families and friends and evolve with the world | planned | **Phase E** |
@@ -76,7 +77,25 @@ Goal: the player lives in places, not in a button panel.
 7. Needs: facade and tree/stump sprites in `tools/woodcut.py`; a camera per
    screen (one camera, repositioned; `Projection::Orthographic` scale).
 
-## Phase B — action, and how to avoid it
+## Phase B — action, and how to avoid it — DONE
+
+Shipped: plots against you park at the gate (`action::park`) when you're
+home; four answers, three of them played by hand. *Talk down* reads his
+mood off him (grief, rage, fear, greed) over three timed rounds; *face him
+down* is a needle to hold in a calm zone whose width is your courage, kin
+and powder, against shoves sized by his anger and his riders; *draw* is a
+reaction test against his hand (0.30–0.75 s) and then a swaying aim (high
+kills, low wounds; whiskey sways you). A failed talk or stare goes to guns.
+*Confront* rides to their door. *Raids*: lantern cones sweep from the ones
+sitting up, sleepers get up on a rhythm, a dog walks its round and chases,
+crawl to shrink, hold E to burn/foul/shoot/drive/cut/wet/listen; whoever's
+light holds you becomes a true Witnessed belief (staged into perception),
+everyone else guesses. *Ambush*: riders cross the road after hoofbeats;
+Shift holds your breath; at a dark moon you can't tell who's who, and at a
+bright one they can see you. Misses are `ShotAt`, still an attack, and they
+may shoot back. `lab standoff` shows the odds. Left for later: the cow you
+drive off following you on screen, sounds, arms on hand (Phase C) and
+hired men at your side (Phase D) in the stare.
 
 1. **Standoffs** (sim hook): when a `Retaliation` against the player comes
    due and the player is home, the sim parks it as `pending_standoff`

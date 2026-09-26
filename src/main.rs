@@ -5,7 +5,8 @@
 //!
 //! Debug knobs (env vars): BK_SEED, BK_START_DAYS (run the sim ahead before
 //! showing it), BK_DAY_SECONDS (clock speed), BK_SCREEN (county, claim,
-//! lawrence, franklin, lecompton).
+//! lawrence, franklin, lecompton), BK_PLAY (gate, door, raid, ambush: start
+//! in one of the action games against the Pikes).
 
 // Bevy systems take their world as arguments; long parameter lists and
 // query types are how it's written.
@@ -14,7 +15,9 @@
 mod claim;
 mod cmds;
 mod county;
+mod duel;
 mod panels;
+mod raid;
 mod scene;
 mod scenery;
 mod town;
@@ -73,6 +76,8 @@ enum Screen {
     #[default]
     Claim,
     Town,
+    /// Someone else's place, at night.
+    Raid,
 }
 
 /// Which town, when the screen is a town.
@@ -152,6 +157,8 @@ fn main() {
         .init_resource::<ui::Overlay>()
         .init_resource::<walk::Bounds>()
         .init_resource::<county::CountyView>()
+        .init_resource::<duel::Game>()
+        .init_resource::<raid::Raid>()
         .insert_resource(scenes)
         .add_systems(
             Startup,
@@ -161,6 +168,8 @@ fn main() {
                 county::setup,
                 ui::setup,
                 scene::setup,
+                duel::setup,
+                debug_play,
             )
                 .chain(),
         )
@@ -169,6 +178,8 @@ fn main() {
         .add_systems(OnExit(Screen::Claim), walk::despawn)
         .add_systems(OnEnter(Screen::Town), town::enter)
         .add_systems(OnExit(Screen::Town), walk::despawn)
+        .add_systems(OnEnter(Screen::Raid), raid::enter)
+        .add_systems(OnExit(Screen::Raid), walk::despawn)
         .add_systems(
             Update,
             (
@@ -181,9 +192,12 @@ fn main() {
                 ui::overlays,
                 ui::dusk,
                 scene::run,
+                duel::play,
+                duel::draw,
             )
                 .chain(),
         )
+        .add_systems(Update, raid::sneak.run_if(in_state(Screen::Raid)))
         .add_systems(
             Update,
             (
@@ -221,6 +235,53 @@ fn main() {
         .run();
 }
 
+/// BK_PLAY: drop straight into an action game, for testing by hand.
+fn debug_play(
+    mut sim: ResMut<Sim>,
+    mut game: ResMut<duel::Game>,
+    mut raid: ResMut<raid::Raid>,
+    mut next: ResMut<NextState<Screen>>,
+) {
+    use bleeding_kansas::sim::action;
+    let world = &mut sim.0;
+    let Some(pike) = world
+        .living()
+        .find(|n| {
+            n.faction == bleeding_kansas::sim::Faction::ProSlavery
+                && n.family != 0
+                && !world.families[n.family as usize].store
+                && n.age >= 18
+                && !bleeding_kansas::sim::world::is_woman(&n.name)
+        })
+        .map(|n| n.id)
+    else {
+        return;
+    };
+    match std::env::var("BK_PLAY").as_deref() {
+        Ok("gate") => {
+            action::park(
+                world,
+                pike,
+                bleeding_kansas::sim::events::Retaliation::Arson,
+                None,
+            );
+        }
+        Ok("door") => {
+            action::confront(world, pike);
+        }
+        Ok("raid") => {
+            raid.plan = action::raid_plan(world, pike);
+            next.set(Screen::Raid);
+        }
+        Ok("ambush") => {
+            if let Some(plan) = action::ambush_plan(world, pike) {
+                game.ambush(world, plan, 1.0);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn spawn_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
@@ -231,8 +292,14 @@ fn advance_calendar(
     mut sim: ResMut<Sim>,
     menu: Res<ui::Menu>,
     overlay: Res<ui::Overlay>,
+    state: Res<State<Screen>>,
 ) {
-    if clock.paused || !sim.0.player_alive() || ui::blocking(&menu, &overlay) {
+    // Nights out take no time on the clock: the day's already done.
+    if clock.paused
+        || !sim.0.player_alive()
+        || ui::blocking(&menu, &overlay)
+        || *state.get() == Screen::Raid
+    {
         return;
     }
     clock.timer.tick(time.delta());

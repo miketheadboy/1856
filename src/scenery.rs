@@ -49,6 +49,10 @@ pub struct Art {
     pub cross: Handle<Image>,
     pub rifles: Handle<Image>,
     pub ballot: Handle<Image>,
+    pub rider: Handle<Image>,
+    pub gunman: Handle<Image>,
+    pub dog: Handle<Image>,
+    pub cow: Handle<Image>,
 }
 
 impl FromWorld for Art {
@@ -88,6 +92,10 @@ impl FromWorld for Art {
             cross: l("cross"),
             rifles: l("rifles"),
             ballot: l("ballot"),
+            rider: l("rider"),
+            gunman: l("gunman"),
+            dog: l("dog"),
+            cow: l("cow"),
         }
     }
 }

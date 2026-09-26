@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use super::action::End;
 use super::events::{
     Cruelty, Desperate, EventId, EventKind, FireCause, Hardship, Loot, Retaliation, Source,
     Suspect, WorldEvent,
@@ -929,6 +930,76 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 )
             }
         }
+        EventKind::RidersAtGate {
+            actor,
+            target,
+            method,
+        } => format!(
+            "[GATE] {} at {} gate after dark, {}",
+            capitalize(&who(world, actor)),
+            whose(world, target),
+            match method {
+                Retaliation::Arson => "carrying a torch",
+                Retaliation::Ambush => "a rifle across the saddle",
+            }
+        ),
+        EventKind::Standoff { other, end, yours } => {
+            let o = who(world, other);
+            match (end, yours) {
+                (End::TalkedDown, false) => {
+                    format!("[GATE] You talked {o} down. He rode home with the torch unlit")
+                }
+                (End::TalkedDown, true) => {
+                    format!("[GATE] You had it out with {o} at his door, and it ended in words")
+                }
+                (End::FacedDown, false) => {
+                    format!("[GATE] {} blinked first and rode off", capitalize(&o))
+                }
+                (End::FacedDown, true) => {
+                    format!("[GATE] You faced {o} down in front of his own house")
+                }
+                (End::Shot { killed: true }, _) => {
+                    format!("[GATE] Guns out. {} is dead in the dirt", capitalize(&o))
+                }
+                (End::Shot { killed: false }, _) => {
+                    format!("[GATE] Guns out. You put a ball in {o}")
+                }
+                (End::Beaten, _) => format!("[GATE] Guns out. {} was quicker", capitalize(&o)),
+                (End::BackedDown, false) => {
+                    format!("[GATE] You stood aside and let {o} do what he came to do")
+                }
+                (End::BackedDown, true) => {
+                    format!("[GATE] You rode to {o}'s door and lost your nerve on the step")
+                }
+            }
+        }
+        EventKind::Prowler {
+            prowler,
+            victim,
+            seen,
+        } => {
+            if seen > 0 {
+                format!(
+                    "[NIGHT] Someone on {} place in the dark. They swear it was {}",
+                    whose(world, victim),
+                    who(world, prowler)
+                )
+            } else {
+                format!(
+                    "[NIGHT] The dog at {} place barked at something in the dark",
+                    whose(world, victim)
+                )
+            }
+        }
+        EventKind::ShotAt { shooter, target } => format!(
+            "[NIGHT] A shot from the dark at {} on the road. It missed{}",
+            who(world, target),
+            if omniscient {
+                format!(" ({} fired it)", who(world, shooter))
+            } else {
+                String::new()
+            }
+        ),
         EventKind::Retaliation {
             actor,
             target,
@@ -973,6 +1044,7 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
     match ev.kind {
         EventKind::Gossip { .. } | EventKind::Grief { .. } => false,
         EventKind::Retaliation { .. } | EventKind::Spared { .. } => omniscient,
+        EventKind::Prowler { seen, .. } => omniscient || seen > 0,
         EventKind::SeekerAtDoor { family, .. }
         | EventKind::Sheltered { family, .. }
         | EventKind::TurnedAway { family, .. } => omniscient || family == 0,

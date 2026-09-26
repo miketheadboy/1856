@@ -46,6 +46,7 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::land::on_event(world, ev);
     super::railroad::on_event(world, ev);
     super::market::on_event(world, ev);
+    super::action::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
@@ -172,6 +173,10 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         } => (victim, Some(actor), false),
         // You mostly see who shot you.
         EventKind::Wounded { victim, attacker } => (victim, Some(attacker), true),
+        EventKind::ShotAt { shooter, target } => (target, Some(shooter), true),
+        EventKind::Prowler {
+            prowler, victim, ..
+        } => (victim, Some(prowler), false),
         _ => return,
     };
     let site = world.farm_of(victim);
@@ -192,8 +197,11 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         }
     }
 
+    // Played out by hand: the minigame already knows who saw.
+    let staged = world.action.staged_for(actor).map(|e| e.to_vec());
     for (observer, stakeholder) in observers {
-        if !stakeholder {
+        let eyewitness = staged.as_ref().map(|e| e.contains(&observer));
+        if !stakeholder && eyewitness != Some(true) {
             let d = distance(world.farm_of(observer), site);
             if !world.rng.chance(0.45 * (1.0 - d / 9.0)) {
                 continue;
@@ -219,7 +227,10 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         // Timber hides a rider; open prairie shows him for miles (§7.4).
         // A full moon shows him too; a dark or clouded one hides him.
         let terrain = world.map.at(site).visibility() * (0.5 + 0.9 * world.night_light(ev.day));
-        let saw = actor.filter(|_| world.rng.chance(sight * hidden * keen * terrain));
+        let saw = match eyewitness {
+            Some(seen) => actor.filter(|_| seen),
+            None => actor.filter(|_| world.rng.chance(sight * hidden * keen * terrain)),
+        };
         if !stakeholder {
             psyche::feel(world, observer, |e| e.fear += 10.0);
         }
@@ -508,6 +519,10 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
     }
     // The humble can swallow a slight.
     p *= 1.0 - 0.4 * world.npc(holder).temperament.humility;
+    // Faced down, or talked down, at this man's gate: not yet.
+    if world.action.cowed(holder, target, ev.day) {
+        p *= 0.15;
+    }
     // Dragoons on the roads: people think twice.
     if world.pacified_until.is_some_and(|d| ev.day < d) {
         p *= 0.3;

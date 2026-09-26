@@ -54,6 +54,36 @@ pub fn plain(text: &str) -> String {
     text.replace('—', "-").replace(['→', '⟶'], "->")
 }
 
+/// Lines are written about a man; if it's a woman at the gate, say so.
+pub fn gendered(text: &str, woman: bool) -> String {
+    if !woman {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut word = String::new();
+    let flush = |w: &mut String, out: &mut String| {
+        out.push_str(match w.as_str() {
+            "he" => "she",
+            "He" => "She",
+            "his" | "him" => "her",
+            "His" | "Him" => "Her",
+            "himself" => "herself",
+            other => other,
+        });
+        w.clear();
+    };
+    for c in text.chars() {
+        if c.is_alphabetic() {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
+}
+
 pub fn bar(v: f32, max: f32) -> String {
     let n = ((v / max) * 10.0).clamp(0.0, 10.0) as usize;
     format!("{}{}", "#".repeat(n), ".".repeat(10 - n))

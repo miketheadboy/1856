@@ -48,6 +48,8 @@ pub fn victim_of(world: &World, event: EventId) -> Option<NpcId> {
         EventKind::Strayed { owner } => Some(owner),
         EventKind::Captured { at: Some(f), .. } => world.head_of(f),
         EventKind::Wounded { victim, .. } => Some(victim),
+        EventKind::ShotAt { target, .. } => Some(target),
+        EventKind::Prowler { victim, .. } => Some(victim),
         EventKind::Cruelty {
             victim,
             act: Cruelty::KillStock | Cruelty::FoulWell | Cruelty::CutFence | Cruelty::SpoilHay,
