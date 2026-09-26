@@ -984,6 +984,7 @@ impl World {
         super::reconcile::monthly(self);
         super::romance::monthly(self);
         super::law::monthly(self);
+        super::legacy::monthly(self);
         super::civic::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);

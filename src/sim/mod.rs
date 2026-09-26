@@ -20,6 +20,7 @@ pub mod ghosts;
 pub mod history;
 pub mod institutions;
 pub mod law;
+pub mod legacy;
 pub mod life;
 pub mod mail;
 pub mod market;

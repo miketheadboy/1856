@@ -675,6 +675,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             joined,
             dodged,
             wounded,
+            ..
         } => format!(
             "[MUSTER] {}: {} rode out, {} stayed home{}",
             super::law::MUSTERS[index as usize].name,
@@ -696,6 +697,34 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             "[MEETING] The union meeting has split, North and South. Old pew-mates pass without a word"
                 .into()
         }
+        EventKind::Notice {
+            paper,
+            about,
+            praise,
+        } => {
+            let what = debug_line(world, &world.events[about as usize], false);
+            let what = what.split_once("] ").map_or(what.clone(), |(_, r)| r.to_string());
+            format!(
+                "[PRESS] {} {} you: {}",
+                paper.name(),
+                if praise { "praises" } else { "damns" },
+                what
+            )
+        }
+        EventKind::Legacy {
+            child,
+            path,
+            rebelled,
+        } => format!(
+            "[FAMILY] {} is near grown: {} the {}",
+            world.name(child),
+            if rebelled {
+                "nothing like"
+            } else {
+                "the very image of"
+            },
+            path
+        ),
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),

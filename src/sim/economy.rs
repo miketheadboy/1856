@@ -58,6 +58,8 @@ pub struct Household {
     pub goods: [f32; GOODS],
     /// The farm year: plowing, planting, hay, corn in the field, fences.
     pub work: super::farmwork::Farm,
+    /// The store won't carry this family until then (a scandal, `legacy`).
+    pub credit_cut_until: Option<Day>,
 }
 
 impl Household {
@@ -353,6 +355,9 @@ pub fn act(world: &mut World, family: FamilyId, choice: Choice) -> bool {
             } else {
                 CREDIT_LIMIT
             };
+            if super::legacy::credit_cut(world, family) {
+                return false;
+            }
             let hh = &mut world.families[f].stores;
             if hh.debt >= limit {
                 return false;

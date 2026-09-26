@@ -52,6 +52,7 @@ Sim modules (`src/sim/`):
 | `mail` | the Lawrence post office on Wednesdays (not through a blockade): money, deaths back home, kin coming out (new household members); the unlettered need a neighbor to read, who then knows their business |
 | `law` | the pro-slavery justice of the peace and lawsuits over jumped claims; the 1855–57 elections (Topeka votes, Missourians at territorial polls, votes sold at the store, Walker's rejected returns); militia musters (Wakarusa, Jones's posse, Franklin, Hickory Point) with shirkers noticed and men shot |
 | `bees` | husking bees (shuck the host's corn, the red ear), quilting bees (quilts cut winter need), spelling bees, singing school (courting); the union meeting that mixes both sides until tension splits it North and South |
+| `legacy` | the papers write you up (readers take the paper's view of you); a scandal shuts the store's book; your children drift toward your path and, near grown, take after you or rebel |
 | `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |
 | `chronicle` | text for every event; cascade trees; lineage; "wars nobody started" |

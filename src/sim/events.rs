@@ -418,6 +418,20 @@ pub enum EventKind {
         joined: u8,
         dodged: u8,
         wounded: u8,
+        /// The player rode.
+        you: bool,
+    },
+    /// A paper writes you up.
+    Notice {
+        paper: super::history::Paper,
+        about: EventId,
+        praise: bool,
+    },
+    /// A child of yours turns fifteen, and turns out like you or against you.
+    Legacy {
+        child: NpcId,
+        path: &'static str,
+        rebelled: bool,
     },
     BeeHeld {
         bee: super::bees::Bee,

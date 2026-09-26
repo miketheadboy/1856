@@ -544,6 +544,7 @@ fn close_muster(world: &mut World, i: usize) {
             joined: joined.len() as u8,
             dodged: dodgers.len() as u8,
             wounded,
+            you: joined.contains(&PLAYER),
         },
         None,
     );

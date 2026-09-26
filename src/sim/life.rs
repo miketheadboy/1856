@@ -172,6 +172,8 @@ pub struct Life {
     pub wrote_home: u8,
     /// How you voted, and when.
     pub ballot: Option<(Day, super::law::Ballot)>,
+    /// Children who've come of age in your shadow.
+    pub legacies: Vec<NpcId>,
 }
 
 impl Default for Life {
@@ -188,6 +190,7 @@ impl Default for Life {
             trapline: 0,
             wrote_home: 0,
             ballot: None,
+            legacies: Vec::new(),
         }
     }
 }
