@@ -757,7 +757,7 @@ fn market_and_nations(world: &World) -> String {
 fn nations(world: &World) -> String {
     let herd = world.bison.abundance();
     let mut s = format!(
-        "BUFFALO RANGE, WEST\n{} {}\n\nNATIONS\nland pressure, trust (F-S / P-S)\n",
+        "BUFFALO RANGE, WEST\n{} {}\n\nNATIONS\npressure, trust F-S / P-S\n",
         bar(herd, 1.0),
         if herd > 0.6 {
             "herds plenty"
@@ -769,7 +769,7 @@ fn nations(world: &World) -> String {
     );
     for n in &world.nations {
         s.push_str(&format!(
-            "\n{}\n{}  {:.0} / {:.0}\n",
+            "{:<9} {}  {:.0} / {:.0}\n",
             n.id.name(),
             bar(n.land_pressure, 100.0),
             n.trust[Faction::FreeState.index()],
