@@ -19,6 +19,7 @@ pub mod geography;
 pub mod ghosts;
 pub mod history;
 pub mod institutions;
+pub mod intrigue;
 pub mod land;
 pub mod law;
 pub mod legacy;

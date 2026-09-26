@@ -53,6 +53,7 @@ Sim modules (`src/sim/`):
 | `law` | the pro-slavery justice of the peace and lawsuits over jumped claims; the 1855–57 elections (Topeka votes, Missourians at territorial polls, votes sold at the store, Walker's rejected returns); militia musters (Wakarusa, Jones's posse, Franklin, Hickory Point) with shirkers noticed and men shot |
 | `bees` | husking bees (shuck the host's corn, the red ear), quilting bees (quilts cut winter need), spelling bees, singing school (courting); the union meeting that mixes both sides until tension splits it North and South |
 | `land` | Lawrence town lots through the 1856 emigration, the Sack, the 1857 boom and the Panic; buying a broken family's relinquishment (they depart for the States) |
+| `intrigue` | the player's dark verbs: secrets learned at the groggery or by moonlight, blackmail, exposure, sabotage (shoot a cow, foul a well, cut a fence, wet the hay) read through attribution, slander |
 | `legacy` | the papers write you up (readers take the paper's view of you); a scandal shuts the store's book; your children drift toward your path and, near grown, take after you or rebel |
 | `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |

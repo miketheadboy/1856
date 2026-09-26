@@ -118,6 +118,14 @@ pub enum Activity {
     SellLot,
     /// Buy out a broken family's relinquishment.
     BuyClaim(super::world::FamilyId),
+    /// Ask money for your silence.
+    Blackmail(NpcId),
+    /// Tell the county what you know.
+    Expose(NpcId),
+    /// Night work: shoot a cow, foul a well, pull a fence, wet the hay.
+    Sabotage(NpcId, super::events::Cruelty),
+    /// Point a hurt family at somebody.
+    Slander(NpcId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -396,6 +404,16 @@ pub fn act(world: &mut World, what: Activity) -> bool {
             }
             ok
         }
+        Activity::Blackmail(t) => super::intrigue::blackmail(world, t).is_some(),
+        Activity::Expose(t) => super::intrigue::expose(world, t),
+        Activity::Sabotage(t, act) => {
+            let ok = super::intrigue::sabotage(world, t, act);
+            if ok {
+                world.life.cheer(-3.0);
+            }
+            ok
+        }
+        Activity::Slander(t) => super::intrigue::slander(world, t),
         Activity::Trap => trap(world),
         Activity::Camp => camp(world),
         Activity::WriteHome => {
@@ -538,8 +556,13 @@ fn camp(world: &mut World) -> bool {
     let sight = if let Some(&(actor, target)) = riders.first()
         && world.rng.chance(0.25 + 0.3 * light)
     {
+        // Seen by a bright moon: now you know something about them.
+        let rider = (light > 0.7).then_some(actor);
+        if let Some(r) = rider {
+            super::intrigue::learn(world, r);
+        }
         Sight::Riders {
-            rider: (light > 0.7).then_some(actor),
+            rider,
             toward: world.npc(target).family,
         }
     } else if !restless.is_empty() && world.rng.chance(0.2 * (0.3 + light)) {
@@ -717,6 +740,18 @@ fn drink(world: &mut World) -> bool {
     }
     family::leave_for(world, Errand::Drinking, 1);
     pastime(world, Pastime::Drank, 1);
+    // Loose talk: somebody's secret, over the third glass.
+    let secrets: Vec<NpcId> = world
+        .institutions
+        .secrets
+        .iter()
+        .filter(|s| !s.exposed && !s.known_by.contains(&PLAYER))
+        .map(|s| s.about)
+        .collect();
+    if !secrets.is_empty() && world.rng.chance(0.2) {
+        let about = secrets[world.rng.range(0, secrets.len() as u32) as usize];
+        super::intrigue::learn(world, about);
+    }
     // The groggery talks: overhear somebody's version of something.
     if world.institutions.open[Venue::JackOfHearts.index()] {
         let fresh: Vec<(NpcId, u32, Suspect)> = world

@@ -49,7 +49,7 @@ pub fn victim_of(world: &World, event: EventId) -> Option<NpcId> {
         EventKind::Wounded { victim, .. } => Some(victim),
         EventKind::Cruelty {
             victim,
-            act: Cruelty::KillStock | Cruelty::FoulWell,
+            act: Cruelty::KillStock | Cruelty::FoulWell | Cruelty::CutFence | Cruelty::SpoilHay,
             ..
         } => Some(victim),
         _ => None,
@@ -132,6 +132,24 @@ pub fn candidates(
             suspect: Suspect::Accident,
             score: 25.0 + rumor_for(Suspect::Accident),
             reason: "bad water in a wet spring",
+            parts: Vec::new(),
+        }),
+        EventKind::Cruelty {
+            act: Cruelty::CutFence,
+            ..
+        } => out.push(Candidate {
+            suspect: Suspect::Accident,
+            score: 30.0 + rumor_for(Suspect::Accident),
+            reason: "the rails were rotten",
+            parts: Vec::new(),
+        }),
+        EventKind::Cruelty {
+            act: Cruelty::SpoilHay,
+            ..
+        } => out.push(Candidate {
+            suspect: Suspect::Nature,
+            score: 35.0 + rumor_for(Suspect::Nature),
+            reason: "rain got into the stack",
             parts: Vec::new(),
         }),
         _ => {}

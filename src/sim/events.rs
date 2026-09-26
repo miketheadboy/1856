@@ -91,6 +91,10 @@ pub enum Cruelty {
     KillStock,
     /// Throw a carcass in the well. Everyone who drinks sickens.
     FoulWell,
+    /// Pull the rails at night; the stock wanders.
+    CutFence,
+    /// Wet the haystack: it rots before February.
+    SpoilHay,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

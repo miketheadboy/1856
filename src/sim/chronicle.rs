@@ -275,6 +275,10 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                     format!("[CRUELTY] A cow was found shot at {}{}", place, truth)
                 }
                 Cruelty::FoulWell => format!("[CRUELTY] The well at {} was fouled{}", place, truth),
+                Cruelty::CutFence => {
+                    format!("[CRUELTY] The fence at {} was down in the morning{}", place, truth)
+                }
+                Cruelty::SpoilHay => format!("[CRUELTY] The hay at {} was rotting{}", place, truth),
             }
         }
         EventKind::Trespass { family, nation } => format!(
@@ -878,7 +882,11 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
         EventKind::Gossip { .. } | EventKind::Grief { .. } => false,
         EventKind::Retaliation { .. } | EventKind::Spared { .. } => omniscient,
         EventKind::Affair { a, b } => omniscient || a == PLAYER || b == PLAYER,
-        EventKind::Blackmail { paid: true, .. } => omniscient,
+        EventKind::Blackmail {
+            paid: true,
+            extorter,
+            victim,
+        } => omniscient || extorter == PLAYER || victim == PLAYER,
         EventKind::Cruelty {
             act: Cruelty::Slander { .. },
             ..

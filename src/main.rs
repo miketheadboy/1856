@@ -9,10 +9,11 @@ use bleeding_kansas::sim::character;
 use bleeding_kansas::sim::chronicle::{self, suspect_label};
 use bleeding_kansas::sim::civic::Project;
 use bleeding_kansas::sim::economy::Choice;
-use bleeding_kansas::sim::events::Source;
+use bleeding_kansas::sim::events::{Cruelty, Source};
 use bleeding_kansas::sim::family::{self, Errand};
 use bleeding_kansas::sim::farmwork;
 use bleeding_kansas::sim::geography::{self, HEIGHT, PLACES, Terrain, WIDTH};
+use bleeding_kansas::sim::intrigue;
 use bleeding_kansas::sim::law;
 use bleeding_kansas::sim::life::{self, Activity, Skill};
 use bleeding_kansas::sim::market::Good;
@@ -117,6 +118,16 @@ enum Action {
     Baptize,
     Sue,
     BuyClaim,
+    /// Aimed at the selected neighbor, after dark.
+    Dark(Dark),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Dark {
+    Blackmail,
+    Expose,
+    Slander,
+    Harm(Cruelty),
 }
 
 fn main() {
@@ -476,6 +487,29 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                     (Action::Do(Activity::BuyLot), "BUY TOWN LOT", blue),
                     (Action::Do(Activity::SellLot), "SELL TOWN LOT", blue),
                     (Action::BuyClaim, "BUY THEIR CLAIM", brown),
+                    (Action::Dark(Dark::Blackmail), "BLACKMAIL", red),
+                    (Action::Dark(Dark::Expose), "EXPOSE", red),
+                    (Action::Dark(Dark::Slander), "SLANDER", red),
+                    (
+                        Action::Dark(Dark::Harm(Cruelty::KillStock)),
+                        "SHOOT A COW",
+                        red,
+                    ),
+                    (
+                        Action::Dark(Dark::Harm(Cruelty::FoulWell)),
+                        "FOUL WELL",
+                        red,
+                    ),
+                    (
+                        Action::Dark(Dark::Harm(Cruelty::CutFence)),
+                        "CUT FENCE",
+                        red,
+                    ),
+                    (
+                        Action::Dark(Dark::Harm(Cruelty::SpoilHay)),
+                        "WET THE HAY",
+                        red,
+                    ),
                     (Action::Leave(Errand::Buffalo), "LEAVE A WHILE", gray),
                 ],
             );
@@ -647,6 +681,14 @@ fn handle_actions(
             }
             (Action::Baptize, Some(t)) => {
                 w.player_do(Activity::Baptize(t));
+            }
+            (Action::Dark(d), Some(t)) => {
+                w.player_do(match d {
+                    Dark::Blackmail => Activity::Blackmail(t),
+                    Dark::Expose => Activity::Expose(t),
+                    Dark::Slander => Activity::Slander(t),
+                    Dark::Harm(c) => Activity::Sabotage(t, c),
+                });
             }
             (Action::BuyClaim, Some(t)) => {
                 let f = w.npc(t).family;
@@ -938,6 +980,13 @@ fn your_life(world: &World) -> String {
         "Lawrence lots ${:.0}   you hold {}\n",
         world.land.lot_price, world.land.lots
     ));
+    let leverage: Vec<&str> = intrigue::leverage(world)
+        .into_iter()
+        .map(|n| world.name(n))
+        .collect();
+    if !leverage.is_empty() {
+        s.push_str(&format!("You know things about: {}\n", leverage.join(", ")));
+    }
     let paths = life::paths(world);
     if !paths.is_empty() {
         s.push_str(&format!("They call you: {}\n", paths.join(", ")));

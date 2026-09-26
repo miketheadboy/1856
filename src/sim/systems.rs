@@ -156,7 +156,7 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         EventKind::Cruelty {
             actor,
             victim,
-            act: Cruelty::KillStock | Cruelty::FoulWell,
+            act: Cruelty::KillStock | Cruelty::FoulWell | Cruelty::CutFence | Cruelty::SpoilHay,
         } => (victim, Some(actor), false),
         // You mostly see who shot you.
         EventKind::Wounded { victim, attacker } => (victim, Some(attacker), true),
@@ -647,6 +647,12 @@ fn cruelty_system(world: &mut World, ev: &WorldEvent) {
                 n.health = (n.health - (25.0 * n.body.frailty()) as i32).max(1);
                 n.emotions.fear += 20.0;
             }
+        }
+        Cruelty::CutFence => {
+            world.families[family as usize].stores.work.fences = 0.0;
+        }
+        Cruelty::SpoilHay => {
+            world.families[family as usize].stores.work.hay *= 0.3;
         }
     }
 }

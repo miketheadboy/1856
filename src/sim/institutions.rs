@@ -349,35 +349,41 @@ fn blackmail(world: &mut World) {
                 None,
             );
         } else {
-            world.institutions.secrets[i].exposed = true;
-            let id = world.emit_root(
-                EventKind::Blackmail {
-                    victim: s.about,
-                    extorter: knower,
-                    paid: false,
-                },
-                None,
-            );
-            // Scandal: the pious take it hardest.
-            let judges: Vec<(NpcId, f32)> = world
-                .living()
-                .filter(|n| n.id != s.about && n.family as usize != victim_family)
-                .map(|n| (n.id, n.temperament.piety))
-                .collect();
-            let parent = world.events[id as usize].clone();
-            for (j, piety) in judges {
-                let delta = -(5.0 + 20.0 * piety) as i16;
-                world.emit_child(
-                    &parent,
-                    EventKind::OpinionChange {
-                        holder: j,
-                        target: s.about,
-                        delta,
-                        after: 0,
-                    },
-                );
-            }
+            expose(world, i, knower);
         }
+    }
+}
+
+/// Tell the county. The pious take it hardest.
+pub fn expose(world: &mut World, i: usize, by: NpcId) {
+    let s = world.institutions.secrets[i].clone();
+    let victim_family = world.npc(s.about).family as usize;
+    world.institutions.secrets[i].exposed = true;
+    let id = world.emit_root(
+        EventKind::Blackmail {
+            victim: s.about,
+            extorter: by,
+            paid: false,
+        },
+        None,
+    );
+    let judges: Vec<(NpcId, f32)> = world
+        .living()
+        .filter(|n| n.id != s.about && n.family as usize != victim_family)
+        .map(|n| (n.id, n.temperament.piety))
+        .collect();
+    let parent = world.events[id as usize].clone();
+    for (j, piety) in judges {
+        let delta = -(5.0 + 20.0 * piety) as i16;
+        world.emit_child(
+            &parent,
+            EventKind::OpinionChange {
+                holder: j,
+                target: s.about,
+                delta,
+                after: 0,
+            },
+        );
     }
 }
 
