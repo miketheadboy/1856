@@ -9,6 +9,7 @@ use bleeding_kansas::sim::character;
 use bleeding_kansas::sim::chronicle::{self, suspect_label};
 use bleeding_kansas::sim::economy::Choice;
 use bleeding_kansas::sim::events::Source;
+use bleeding_kansas::sim::family::Errand;
 use bleeding_kansas::sim::geography::{self, HEIGHT, PLACES, Terrain, WIDTH};
 use bleeding_kansas::sim::market::Good;
 use bleeding_kansas::sim::nations::NationId;
@@ -103,6 +104,8 @@ enum Action {
     Buy(Good),
     Sell(Good),
     Sign(bool),
+    Leave(Errand),
+    Broker,
 }
 
 fn main() {
@@ -399,6 +402,10 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                     (Action::Steal, "STEAL FROM", brown),
                     (Action::Choose(Choice::Beg), "BEG", blue),
                     (Action::Tavern, "BE SEEN", blue),
+                    (Action::Broker, "BROKER PEACE", blue),
+                    (Action::Leave(Errand::Fishing), "GO FISHING", green),
+                    (Action::Leave(Errand::Courting), "GO COURTING", green),
+                    (Action::Leave(Errand::Drinking), "GO DRINKING", brown),
                     (Action::Pause, "PAUSE", gray),
                 ],
             );
@@ -552,6 +559,18 @@ fn handle_actions(
                 w.player_sell(g, 10.0);
             }
             (Action::Sign(yes), _) => w.player_answer_favor(yes),
+            (Action::Leave(e), _) => w.player_leave(e),
+            (Action::Broker, Some(t)) => {
+                // Between the selected family and whoever it's feuding with.
+                let fam = w.npc(t).family;
+                let other = w
+                    .feuds
+                    .iter()
+                    .find_map(|&(a, b)| (a == fam).then_some(b).or((b == fam).then_some(a)));
+                if let Some(other) = other {
+                    w.player_broker_peace(fam, other);
+                }
+            }
             _ => {}
         }
     }

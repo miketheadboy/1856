@@ -403,6 +403,50 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 who(world, over)
             ),
         },
+        EventKind::Spared { actor, target, why } => format!(
+            "[MERCY] {} had {} in reach and let it go ({})",
+            capitalize(&who(world, actor)),
+            who(world, target),
+            match why {
+                super::reconcile::Mercy::Children => "there were children at the window",
+                super::reconcile::Mercy::Faith => "thou shalt not",
+                super::reconcile::Mercy::Weariness => "too tired of it",
+            }
+        ),
+        EventKind::BarnRaising { owner, hands, rival } => format!(
+            "[RAISING] {} neighbors raised the {} barn in a day{}",
+            hands,
+            surname(world, owner),
+            rival
+                .map(|r| format!(", and {} was among them", who(world, r)))
+                .unwrap_or_default()
+        ),
+        EventKind::Apology { actor, to } => format!(
+            "[APOLOGY] {} went to {} and owned what was done",
+            capitalize(&who(world, actor)),
+            who(world, to)
+        ),
+        EventKind::Condolence { visitor, mourner } => format!(
+            "[CONDOLENCE] {} came, hat in hand, to the burying at the {} place",
+            capitalize(&who(world, visitor)),
+            surname(world, mourner)
+        ),
+        EventKind::FeudEnded { a, b, how } => format!(
+            "[PEACE] The {} and {} feud is over ({})",
+            world.families[a as usize].surname,
+            world.families[b as usize].surname,
+            match how {
+                super::reconcile::Peace::Exhaustion => "nobody could remember why",
+                super::reconcile::Peace::CommonEnemy => "they hate someone else more",
+                super::reconcile::Peace::Calamity => "trouble did it",
+                super::reconcile::Peace::Brokered => "someone talked them down",
+            }
+        ),
+        EventKind::WhereWereYou { kin, errand, .. } => format!(
+            "[HOME] {} wants to know why you were {} when it happened",
+            capitalize(&who(world, kin)),
+            errand.label()
+        ),
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),
@@ -539,7 +583,7 @@ fn family_label(world: &World, family: u32) -> String {
 pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
     match ev.kind {
         EventKind::Gossip { .. } | EventKind::Grief { .. } => false,
-        EventKind::Retaliation { .. } => omniscient,
+        EventKind::Retaliation { .. } | EventKind::Spared { .. } => omniscient,
         EventKind::Blackmail { paid: true, .. } => omniscient,
         EventKind::Cruelty {
             act: Cruelty::Slander { .. },

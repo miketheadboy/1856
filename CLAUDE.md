@@ -42,6 +42,10 @@ Sim modules (`src/sim/`):
 | `nations` | Delaware, Shawnee, Kaw as encroached-upon sovereign actors |
 | `bison` | the herd west of the county, robe-price feedback loop |
 | `institutions` | Jack of Hearts, Free State Hotel, church, barbershop, river-town secrets |
+| `ghosts` | oaths sworn over the dead, inherited oaths, children who come of age, shame when kin think the dead deserved it, restless spirits seen by moonlight |
+| `reconcile` | the better way: mercy at the moment of the act, barn raisings (a rival among the hands), apologies, condolence at a child's grave, enemy-of-my-enemy, feuds that starve, truces, the player's broker verb |
+| `family` | kin and absence: errands (buffalo, fishing, courting, town, drinking) take the player away; harm at home while away costs kin's regard |
+| `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |
 | `chronicle` | text for every event; cascade trees; lineage; "wars nobody started" |
 | `debug` | daily metrics, event trace, `explain_npc` / `explain_blame` / `explain_price` |

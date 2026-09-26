@@ -34,6 +34,8 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     wound_system(world, ev);
     press_system(world, ev);
     super::ghosts::on_event(world, ev);
+    super::reconcile::on_event(world, ev);
+    super::family::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
@@ -437,7 +439,10 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
         return;
     }
 
-    if world.opinion(target, holder) <= HATRED && !world.feud_between(hf, tf) {
+    if world.opinion(target, holder) <= HATRED
+        && !world.feud_between(hf, tf)
+        && !world.truce_holds(hf, tf)
+    {
         world.feuds.insert((hf.min(tf), hf.max(tf)));
         world.emit_child(ev, EventKind::FeudDeclared { a: hf, b: tf });
     }
@@ -480,6 +485,8 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
     if super::ghosts::ashamed(world, holder) {
         p *= 0.5;
     }
+    // The humble can swallow a slight.
+    p *= 1.0 - 0.4 * world.npc(holder).temperament.humility;
     // Dragoons on the roads: people think twice.
     if world.pacified_until.is_some_and(|d| ev.day < d) {
         p *= 0.3;
@@ -523,9 +530,14 @@ pub fn resolve_plot(
     actor: NpcId,
     target: NpcId,
     method: Retaliation,
+    caused_by: Option<super::events::EventId>,
 ) -> Option<Retaliation> {
     world.npc_mut(actor).plotting = None;
     if !world.npc(actor).alive || !world.npc(target).alive {
+        return None;
+    }
+    if let Some(why) = super::reconcile::mercy(world, actor, target, method) {
+        world.emit_root(EventKind::Spared { actor, target, why }, caused_by);
         return None;
     }
     let nothing_to_burn = !world.families[world.npc(target).family as usize].barn_standing;

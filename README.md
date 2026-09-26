@@ -37,6 +37,9 @@ Everything lives in `src/sim/` with no engine in it (§21). Module by module:
 | `history` | The real 1855–57 timeline with mechanical effects, and the Herald of Freedom, Kansas Free State and Squatter Sovereign printing their side's version. |
 | `nations` | The Delaware, Shawnee and Kaw as sovereign actors: timber trespass, agents who rarely act, annuities docked for settler claims, hungry visits, adoption by council. |
 | `bison` | The herd west of the county, the robe trade, the Kaw fall hunt, trips to the range. |
+| `ghosts` | Oaths over the dead that children inherit and wake to at sixteen; shame instead of vengeance when kin believe the dead had it coming; spirits seen under the moon. |
+| `reconcile` | Peace is usually sideways: a plotter who lowers the rifle, a rival at your barn raising, an enemy at a child's grave, a common enemy, exhaustion. Truces hold until new blood. The player can try to broker. |
+| `family`, `mortality` | Go fishing, courting or drinking and the county goes on without you; kin remember what you missed. Children sicken by season, frailty and hunger. |
 | `geography` | The county map: Kaw, Wakarusa, timber belts, roads, towns, claims. Terrain drives sightlines, fire and timber. |
 | `debug` | Daily metrics, event trace, and `explain_*` for people, blame and prices. |
 

@@ -286,6 +286,40 @@ pub enum EventKind {
     SpiritRests {
         spirit: NpcId,
     },
+    /// A plotter had the target in reach and let it go (§13).
+    Spared {
+        actor: NpcId,
+        target: NpcId,
+        why: super::reconcile::Mercy,
+    },
+    /// Neighbors raise a burned barn in a day. A rival among them counts most.
+    BarnRaising {
+        owner: NpcId,
+        hands: u8,
+        rival: Option<NpcId>,
+    },
+    /// The humble own what they did, to the family they did it to.
+    Apology {
+        actor: NpcId,
+        to: NpcId,
+    },
+    /// An enemy came to a child's burying.
+    Condolence {
+        visitor: NpcId,
+        mourner: NpcId,
+    },
+    /// A feud is over, for now.
+    FeudEnded {
+        a: FamilyId,
+        b: FamilyId,
+        how: super::reconcile::Peace,
+    },
+    /// Something happened at home while the player was off somewhere.
+    WhereWereYou {
+        kin: NpcId,
+        missed: EventId,
+        errand: super::family::Errand,
+    },
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

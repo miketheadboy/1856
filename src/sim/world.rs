@@ -196,6 +196,10 @@ pub struct World {
     /// Accumulated grievance per faction (indexed by `Faction::index`).
     pub grievance: [i32; 2],
     pub feuds: HashSet<(FamilyId, FamilyId)>,
+    /// A feud that just ended can't restart until this day without new blood.
+    pub truces: HashMap<(FamilyId, FamilyId), Day>,
+    /// The player is off somewhere until a day; home goes on without them.
+    pub player_away: Option<(Day, super::family::Errand)>,
     /// Weather per day, indexed by `Day.0`.
     pub weather: Vec<Weather>,
     /// 0 wet .. 1 tinder-dry.
@@ -353,6 +357,7 @@ impl World {
                 skepticism: 0.5,
                 loyalty: 0.5,
                 literacy: 0.9,
+                humility: 0.5,
             },
             body: Body {
                 strength: 0.6,
@@ -434,6 +439,8 @@ impl World {
             truncated_cascades: 0,
             grievance: [0; 2],
             feuds: HashSet::new(),
+            truces: HashMap::new(),
+            player_away: None,
             weather: Vec::new(),
             dryness: 0.3,
             winter_severity,
@@ -625,6 +632,11 @@ impl World {
         Some(self.push_event(kind, Some(parent.id), None, parent.cascade_depth + 1))
     }
 
+    /// Is something like this already waiting to happen?
+    pub fn is_scheduled(&self, f: impl Fn(&EventKind) -> bool) -> bool {
+        self.scheduled.iter().any(|s| f(&s.kind))
+    }
+
     /// Act on `kind` on a later day, as a new root linked back to `caused_by`.
     pub fn schedule(&mut self, delay_days: u32, kind: EventKind, caused_by: EventId) {
         self.scheduled.push(Scheduled {
@@ -667,6 +679,8 @@ impl World {
         psyche::daily(self);
         character::daily_evil(self);
         super::ghosts::daily(self);
+        super::mortality::daily(self);
+        super::family::daily(self);
         systems::spread_gossip(self);
         super::institutions::weekly(self);
         if self.day.is_first_of_month() {
@@ -800,7 +814,7 @@ impl World {
                     actor,
                     target,
                     method,
-                } => match systems::resolve_plot(self, actor, target, method) {
+                } => match systems::resolve_plot(self, actor, target, method, Some(s.caused_by)) {
                     Some(method) => EventKind::Retaliation {
                         actor,
                         target,
@@ -882,6 +896,7 @@ impl World {
         nations::monthly(self);
         super::bison::monthly(self);
         super::institutions::monthly(self);
+        super::reconcile::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);
         }
@@ -959,6 +974,9 @@ impl World {
             return false;
         }
         let done = super::bison::go_west(self, 0);
+        if done {
+            super::family::leave(self, super::family::Errand::Buffalo);
+        }
         self.run_cascades();
         done
     }
@@ -988,6 +1006,27 @@ impl World {
             None,
         );
         self.run_cascades();
+    }
+
+    /// Go off on your own business for a while. Home doesn't wait.
+    pub fn player_leave(&mut self, errand: super::family::Errand) {
+        if self.player_alive() {
+            super::family::leave(self, errand);
+        }
+    }
+
+    pub fn truce_holds(&self, a: FamilyId, b: FamilyId) -> bool {
+        self.truces
+            .get(&(a.min(b), a.max(b)))
+            .is_some_and(|&d| self.day < d)
+    }
+
+    /// Ride between two feuding families and try to talk them down.
+    /// Your standing with both, and your tongue, decide it; failing costs you.
+    pub fn player_broker_peace(&mut self, a: FamilyId, b: FamilyId) -> bool {
+        let ok = super::reconcile::broker(self, a, b);
+        self.run_cascades();
+        ok
     }
 
     /// Be seen in town today. Visibility is an alibi (§11.4).
