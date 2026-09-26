@@ -386,3 +386,56 @@ pub fn daily(world: &mut World) {
             (n.ideology.public + sign * n.emotions.zeal / 20000.0 + pull).clamp(-1.0, 1.0);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn children_starve_first() {
+        assert!(LifeStage::Child.starvation_rate() > LifeStage::Adult.starvation_rate());
+        assert_eq!(LifeStage::of(10), LifeStage::Child);
+        assert_eq!(LifeStage::of(30), LifeStage::Adult);
+        assert_eq!(LifeStage::of(60), LifeStage::Elder);
+    }
+
+    #[test]
+    fn hardiness_reduces_frailty() {
+        let tough = Body {
+            hardiness: 1.0,
+            ..Default::default()
+        };
+        let weak = Body::default();
+        assert!(tough.frailty() < weak.frailty());
+    }
+
+    #[test]
+    fn anger_drives_revenge_and_fear_restrains_it() {
+        let mut w = World::new(1);
+        let base = revenge_drive(&w, 1);
+        feel(&mut w, 1, |e| e.anger = 90.0);
+        assert!(revenge_drive(&w, 1) > base);
+        let angry = revenge_drive(&w, 1);
+        w.npc_mut(1).temperament.courage = 0.0;
+        feel(&mut w, 1, |e| e.fear = 90.0);
+        assert!(revenge_drive(&w, 1) < angry);
+    }
+
+    #[test]
+    fn emotions_spread_through_a_family() {
+        let mut w = World::new(1);
+        let kin: Vec<_> = w.living().filter(|n| n.family == 1).map(|n| n.id).collect();
+        feel(&mut w, kin[0], |e| e.grief = 100.0);
+        let before = w.npc(kin[1]).emotions.grief;
+        daily(&mut w);
+        assert!(w.npc(kin[1]).emotions.grief > before);
+    }
+
+    #[test]
+    fn signing_against_conscience_is_hypocrisy() {
+        let mut i = Ideology::for_faction(Faction::FreeState, 0.8);
+        assert_eq!(i.hypocrisy(), 0.0);
+        i.public -= 0.4;
+        assert!(i.hypocrisy() > 0.3);
+    }
+}

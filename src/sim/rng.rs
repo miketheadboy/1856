@@ -46,3 +46,36 @@ impl SimRng {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn same_seed_same_stream() {
+        let (mut a, mut b) = (SimRng::new(9), SimRng::new(9));
+        for _ in 0..100 {
+            assert_eq!(a.next_u64(), b.next_u64());
+        }
+    }
+
+    #[test]
+    fn unit_and_range_stay_in_bounds() {
+        let mut r = SimRng::new(1);
+        for _ in 0..10_000 {
+            let u = r.unit();
+            assert!((0.0..1.0).contains(&u));
+            let x = r.range(3, 7);
+            assert!((3..7).contains(&x));
+        }
+        assert_eq!(r.range(5, 5), 5);
+        assert!(r.pick::<u8>(&[]).is_none());
+    }
+
+    #[test]
+    fn chance_is_roughly_calibrated() {
+        let mut r = SimRng::new(2);
+        let hits = (0..20_000).filter(|_| r.chance(0.25)).count();
+        assert!((4_500..5_500).contains(&hits), "{hits}");
+    }
+}

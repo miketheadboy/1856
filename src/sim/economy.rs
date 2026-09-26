@@ -670,3 +670,61 @@ pub fn settle_favor(world: &mut World, debtor: NpcId, complied: bool) {
         hh.creditor = None;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eating_seed_trades_next_year_for_this_week() {
+        let mut w = World::new(1);
+        w.families[0].stores.seed = 10;
+        let food = w.families[0].stores.food;
+        assert!(act(&mut w, 0, Choice::EatSeed));
+        assert_eq!(w.families[0].stores.seed, 6);
+        assert!(w.families[0].stores.food > food);
+    }
+
+    #[test]
+    fn butchering_without_salt_wastes_half() {
+        let mut salted = World::new(1);
+        let mut unsalted = World::new(1);
+        for w in [&mut salted, &mut unsalted] {
+            w.families[0].stores.cattle = 5;
+            w.families[0].stores.food = 0.0;
+        }
+        salted.families[0].stores.goods[Good::Salt.index()] = 1.0;
+        unsalted.families[0].stores.goods[Good::Salt.index()] = 0.0;
+        act(&mut salted, 0, Choice::SpareCow);
+        act(&mut unsalted, 0, Choice::SpareCow);
+        assert!(salted.families[0].stores.food > unsalted.families[0].stores.food * 1.9);
+    }
+
+    #[test]
+    fn spare_cow_keeps_a_breeding_pair() {
+        let mut w = World::new(1);
+        w.families[0].stores.cattle = 2;
+        assert!(!act(&mut w, 0, Choice::SpareCow));
+        assert!(act(&mut w, 0, Choice::LastCow));
+    }
+
+    #[test]
+    fn credit_runs_out() {
+        let mut w = World::new(1);
+        for _ in 0..20 {
+            act(&mut w, 0, Choice::Borrow);
+        }
+        assert!(w.families[0].stores.debt <= CREDIT_LIMIT + 10);
+    }
+
+    #[test]
+    fn signing_halves_debt_and_refusing_costs_an_ox() {
+        let mut w = World::new(1);
+        w.families[0].stores.debt = 40;
+        settle_favor(&mut w, 0, true);
+        assert_eq!(w.families[0].stores.debt, 20);
+        w.families[0].stores.oxen = 2;
+        settle_favor(&mut w, 0, false);
+        assert_eq!(w.families[0].stores.oxen, 1);
+    }
+}

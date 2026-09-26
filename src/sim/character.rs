@@ -23,8 +23,9 @@ impl Hidden {
         let m = rng.unit();
         Self {
             luck: 0.7 + rng.unit() * 0.6,
-            // Cubed: a county of mostly decent people and one or two bad ones.
-            malice: m * m * m,
+            // Eighth power: a county of mostly decent people and one or two
+            // bad ones (about 1 in 12 above 0.5).
+            malice: m.powi(8),
         }
     }
 }
@@ -197,4 +198,50 @@ pub fn rumor_weight(world: &World, teller: NpcId) -> f32 {
 /// Slander is gossip with a lie in it.
 pub fn slander_target(victim: NpcId) -> Suspect {
     Suspect::Person(victim)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn archetypes_fall_out_of_stats() {
+        let mut w = World::new(1);
+        let n = w.npc_mut(1);
+        n.age = 30;
+        n.body.marksmanship = 0.9;
+        n.body.stealth = 0.9;
+        n.temperament.sociability = 0.95;
+        let n = w.npc(1);
+        assert!(is(n, Archetype::Bushwhacker));
+        assert!(is(n, Archetype::SilverTongue));
+        assert!(!is(n, Archetype::Deacon) || n.temperament.piety > 0.75);
+    }
+
+    #[test]
+    fn children_are_never_bushwhackers() {
+        let mut w = World::new(1);
+        let n = w.npc_mut(1);
+        n.age = 9;
+        n.body.marksmanship = 1.0;
+        n.body.stealth = 1.0;
+        assert!(!is(w.npc(1), Archetype::Bushwhacker));
+    }
+
+    #[test]
+    fn malice_is_rare() {
+        let mut rng = SimRng::new(4);
+        let cruel = (0..10_000)
+            .filter(|_| Hidden::roll(&mut rng).malice > 0.5)
+            .count();
+        assert!(cruel < 1_000, "{cruel} of 10000 have malice > 0.5");
+    }
+
+    #[test]
+    fn silver_tongues_carry_further() {
+        let mut w = World::new(1);
+        w.npc_mut(1).temperament.sociability = 0.95;
+        w.npc_mut(2).temperament.sociability = 0.1;
+        assert!(rumor_weight(&w, 1) > rumor_weight(&w, 2));
+    }
 }

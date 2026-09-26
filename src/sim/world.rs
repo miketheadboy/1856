@@ -212,6 +212,8 @@ pub struct World {
     pub nations: Vec<Nation>,
     pub map: Map,
     pub bison: super::bison::Herd,
+    /// One row per day for charts and debugging (see `debug`).
+    pub metrics: Vec<super::debug::DailyMetrics>,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -438,6 +440,7 @@ impl World {
             nations: nations::founding(),
             map: Map::county(),
             bison: super::bison::Herd::default(),
+            metrics: Vec::new(),
         };
         for f in 0..world.families.len() {
             let farm = world.families[f].farm;
@@ -641,6 +644,8 @@ impl World {
             self.monthly();
         }
         self.run_cascades();
+        let row = super::debug::snapshot(self);
+        self.metrics.push(row);
     }
 
     pub fn run_days(&mut self, days: u32) {

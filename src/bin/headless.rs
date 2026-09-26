@@ -162,6 +162,13 @@ fn survey(n: u64, days: u32) {
 }
 
 fn main() {
+    // Piping into `head` closes stdout early; exit quietly instead of panicking.
+    std::panic::set_hook(Box::new(|info| {
+        if info.to_string().contains("Broken pipe") {
+            std::process::exit(0);
+        }
+        eprintln!("{info}");
+    }));
     let args = parse_args();
     if let Some(n) = args.survey {
         survey(n, args.days);

@@ -547,3 +547,53 @@ pub fn resent_hoarders(world: &mut World, hungry_family: FamilyId) {
     }
     let _ = Season::Winter;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buying_out_stock_raises_the_price() {
+        let mut w = World::new(1);
+        w.families[0].stores.cash = 100_000;
+        let before = w.market.price(Good::Salt);
+        buy(&mut w, 0, Good::Salt, 1_000.0);
+        for _ in 0..10 {
+            w.market.reprice(Good::Salt);
+        }
+        assert!(w.market.price(Good::Salt) > before * 3.0);
+    }
+
+    #[test]
+    fn buy_spends_cash_and_delivers_goods() {
+        let mut w = World::new(1);
+        w.families[0].stores.cash = 100;
+        let got = buy(&mut w, 0, Good::Powder, 10.0);
+        assert_eq!(got, 10.0);
+        assert!(w.families[0].stores.cash < 100);
+        assert_eq!(holding(&w, 0, Good::Powder), 10.0);
+    }
+
+    #[test]
+    fn you_cannot_buy_without_cash_or_sell_what_you_lack() {
+        let mut w = World::new(1);
+        w.families[0].stores.cash = 0;
+        assert_eq!(buy(&mut w, 0, Good::Corn, 10.0), 0.0);
+        w.families[0].stores.goods[Good::Whiskey.index()] = 0.0;
+        assert_eq!(sell(&mut w, 0, Good::Whiskey, 10.0), 0);
+    }
+
+    #[test]
+    fn dunmore_marks_up_for_free_state_buyers_when_things_are_bad() {
+        let mut w = World::new(1);
+        let calm = ask_price(&w, 0, Good::Corn);
+        w.grievance[Faction::ProSlavery.index()] = 80;
+        assert!(ask_price(&w, 0, Good::Corn) > calm);
+    }
+
+    #[test]
+    fn the_store_buys_below_what_it_sells() {
+        let w = World::new(1);
+        assert!(bid_price(&w, Good::Corn) < ask_price(&w, 0, Good::Corn));
+    }
+}

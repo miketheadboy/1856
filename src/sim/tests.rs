@@ -225,3 +225,28 @@ fn cornering_corn_spikes_the_price_and_breeds_resentment() {
         "the hoarder's name goes bad in a hungry winter"
     );
 }
+
+/// Phase 2 gate (§24): does a bad winter change the political map six months later?
+#[test]
+fn a_harsh_winter_sours_the_summer() {
+    use super::events::Suspect;
+    let accusations = |severity: f32| -> usize {
+        (1..=12)
+            .map(|seed| {
+                let mut w = World::with_winter(seed, Some(severity));
+                w.run_days(290);
+                w.events
+                    .iter()
+                    .filter(|e| {
+                        matches!(e.kind, EventKind::Belief { blamed: Suspect::Person(_), confidence, .. } if confidence >= 20)
+                    })
+                    .count()
+            })
+            .sum()
+    };
+    let (mild, harsh) = (accusations(0.5), accusations(1.6));
+    assert!(
+        harsh as f32 > mild as f32 * 1.1,
+        "mild {mild}, harsh {harsh}"
+    );
+}

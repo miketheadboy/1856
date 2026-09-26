@@ -8,6 +8,7 @@ pub mod bison;
 pub mod calendar;
 pub mod character;
 pub mod chronicle;
+pub mod debug;
 pub mod economy;
 pub mod events;
 pub mod geography;

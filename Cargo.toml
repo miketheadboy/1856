@@ -21,3 +21,14 @@ required-features = ["view"]
 [[bin]]
 name = "headless"
 path = "src/bin/headless.rs"
+
+[[bin]]
+name = "lab"
+path = "src/bin/lab.rs"
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "sim"
+harness = false
