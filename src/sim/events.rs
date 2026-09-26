@@ -419,6 +419,13 @@ pub enum EventKind {
         dodged: u8,
         wounded: u8,
     },
+    BeeHeld {
+        bee: super::bees::Bee,
+        host: FamilyId,
+        crowd: u8,
+    },
+    /// The union meeting divides, North and South.
+    ChurchSplit,
     /// A big move in a price at the store.
     PriceMove {
         good: super::market::Good,

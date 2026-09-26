@@ -108,6 +108,12 @@ pub enum Activity {
     Muster {
         join: bool,
     },
+    /// Go to tonight's bee or singing school.
+    Gather,
+    /// After the split: which meeting you'll sit in.
+    Church {
+        north: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,6 +137,7 @@ pub enum Pastime {
     Trapped { beaver: u8 },
     Camped(Sight),
     WroteHome,
+    Gathered(super::bees::Bee),
 }
 
 /// What a night out shows you.
@@ -337,6 +344,28 @@ pub fn act(world: &mut World, what: Activity) -> bool {
                 family::leave(world, Errand::Militia);
             }
             true
+        }
+        Activity::Gather => match super::bees::attend(world) {
+            Some(bee) => {
+                world.life.cheer(8.0);
+                match bee {
+                    super::bees::Bee::Spelling => world.life.learn(Skill::Letters, 3.0),
+                    super::bees::Bee::SingingSchool => world.life.learn(Skill::Scripture, 2.0),
+                    super::bees::Bee::Husking => world.life.learn(Skill::Farming, 1.0),
+                    super::bees::Bee::Quilting => world.life.learn(Skill::Carpentry, 0.5),
+                }
+                pastime(world, Pastime::Gathered(bee), 1);
+                true
+            }
+            None => false,
+        },
+        Activity::Church { north } => {
+            let side = if north {
+                super::bees::Side::North
+            } else {
+                super::bees::Side::South
+            };
+            super::bees::choose(world, side)
         }
         Activity::Trap => trap(world),
         Activity::Camp => camp(world),

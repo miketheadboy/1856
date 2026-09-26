@@ -461,6 +461,17 @@ fn setup_ui(mut commands: Commands, fonts: Res<Fonts>) {
                         "STAY HOME",
                         gray,
                     ),
+                    (Action::Do(Activity::Gather), "GO TO THE BEE", green),
+                    (
+                        Action::Do(Activity::Church { north: true }),
+                        "MEETING: NORTH",
+                        blue,
+                    ),
+                    (
+                        Action::Do(Activity::Church { north: false }),
+                        "MEETING: SOUTH",
+                        brown,
+                    ),
                     (Action::Leave(Errand::Buffalo), "LEAVE A WHILE", gray),
                 ],
             );
@@ -923,6 +934,13 @@ fn your_life(world: &World) -> String {
         s.push_str(&format!("You are {}.\n", e.label()));
     } else if l.acted_on == Some(world.day) {
         s.push_str("Your day is spent.\n");
+    }
+    if let Some((bee, host, _)) = &world.gatherings.today {
+        s.push_str(&format!(
+            "Tonight: a {} at the {} place.\n",
+            bee.label(),
+            world.families[*host as usize].surname
+        ));
     }
     if let Some(e) = law::election_today(world) {
         s.push_str(&format!("ELECTION DAY: {}.\n", e.name));

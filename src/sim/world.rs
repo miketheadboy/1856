@@ -232,6 +232,8 @@ pub struct World {
     pub civic: super::civic::Civic,
     /// The justice of the peace, open disputes, the current muster.
     pub law: super::law::Law,
+    /// Bees, singing school, and the union meeting.
+    pub gatherings: super::bees::Gatherings,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -478,6 +480,7 @@ impl World {
             life: super::life::Life::default(),
             civic: super::civic::Civic::default(),
             law: super::law::Law::default(),
+            gatherings: super::bees::Gatherings::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -760,6 +763,7 @@ impl World {
         super::farmwork::daily(self);
         super::mail::daily(self);
         super::law::daily(self);
+        super::bees::daily(self);
         super::civic::daily(self);
         super::life::daily(self);
         systems::spread_gossip(self);

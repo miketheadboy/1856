@@ -510,6 +510,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                     }
                 }
                 Pastime::WroteHome => "[LETTER] You wrote home".into(),
+                Pastime::Gathered(bee) => format!("[NEIGHBORS] You went to the {}", bee.label()),
             }
         }
         EventKind::Sermon { preacher, flock } => format!(
@@ -685,6 +686,16 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 String::new()
             }
         ),
+        EventKind::BeeHeld { bee, host, crowd } => format!(
+            "[NEIGHBORS] {} came to the {} {}",
+            crowd,
+            world.families[host as usize].surname,
+            bee.label()
+        ),
+        EventKind::ChurchSplit => {
+            "[MEETING] The union meeting has split, North and South. Old pew-mates pass without a word"
+                .into()
+        }
         EventKind::SpiritSeen { witness, spirit } => format!(
             "[SPIRIT] {} saw {} standing in the dark where it happened",
             capitalize(&who(world, witness)),

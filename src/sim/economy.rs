@@ -114,7 +114,9 @@ pub fn daily(world: &mut World) {
             need -= 0.6 * m;
         }
         if winter {
-            need += 0.3 * m * world.winter_severity;
+            // Quilts from a winter's bees keep a house warmer.
+            let quilts = world.gatherings.quilts(family).min(3) as f32;
+            need += 0.3 * m * world.winter_severity * (1.0 - 0.1 * quilts);
         }
         if weather.blizzard {
             need += 0.4 * m;
