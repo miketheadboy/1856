@@ -170,8 +170,16 @@ pub fn work(world: &mut World, family: FamilyId, hands: f32) -> Task {
 
 /// Mend fence whatever the season asks: a day on the rails.
 pub fn mend(world: &mut World, family: FamilyId, hands: f32) {
-    let w = &mut world.families[family as usize].stores.work;
-    w.fences = (w.fences + 0.1 * hands).min(1.0);
+    let h = &mut world.families[family as usize].stores;
+    // Rails already split go up three times as fast as rails you split today.
+    let split = if h.arms.rails >= 10 {
+        h.arms.rails -= 10;
+        3.0
+    } else {
+        1.0
+    };
+    let w = &mut h.work;
+    w.fences = (w.fences + 0.1 * hands * split).min(1.0);
 }
 
 /// Yield multiplier for when the corn went in.

@@ -18,7 +18,6 @@ use super::character::{self, Archetype};
 use super::events::{Cruelty, EventId, EventKind, FireCause, Retaliation};
 use super::homestead::{self, Improvement};
 use super::life::Skill;
-use super::market::Good;
 use super::psyche::LifeStage;
 use super::world::{FamilyId, NpcId, PLAYER, World};
 
@@ -230,7 +229,13 @@ pub fn sway(world: &World) -> f32 {
         0.0
     };
     let hurt = if me.wounded { 0.25 } else { 0.0 };
-    (0.85 - 0.6 * me.body.marksmanship + drunk + hurt).clamp(0.15, 1.2)
+    // A Sharps has sights worth the name.
+    let sharps = if world.families[0].stores.arms.rifles > 0 {
+        0.8
+    } else {
+        1.0
+    };
+    ((0.85 - 0.6 * me.body.marksmanship + drunk + hurt) * sharps).clamp(0.12, 1.2)
 }
 
 /// Half-width of the calm zone in a staredown, 0..0.5 of the bar. Courage,
@@ -242,19 +247,23 @@ pub fn nerve(world: &World) -> f32 {
         .filter(|n| n.family == 0 && n.id != PLAYER && LifeStage::of(n.age) == LifeStage::Adult)
         .count()
         .min(2) as f32;
-    let powder = if world.families[0].stores.goods[Good::Powder.index()] >= 1.0 {
-        0.03
-    } else {
-        0.0
-    };
-    0.09 + 0.10 * me.temperament.courage + 0.03 * men + powder
+    // Guns you can reach, and enough rounds to make them more than furniture.
+    let a = &world.families[0].stores.arms;
+    let guns = a.at_hand().min(3) as f32;
+    let loaded = if a.rounds() >= 10 { 0.02 } else { 0.0 };
+    0.08 + 0.10 * me.temperament.courage + 0.03 * men + 0.02 * guns + loaded
 }
 
 /// How hard he pushes back in a staredown, 0.5 .. 2.
 pub fn pressure(world: &World, s: &Standoff) -> f32 {
     let n = world.npc(s.actor);
-    (0.6 + n.emotions.anger / 100.0 + 0.5 * n.temperament.courage + 0.25 * s.riders.len() as f32)
-        .clamp(0.5, 2.0)
+    // A Sharps across the saddle leans harder than a fowling piece.
+    let rifles = world.families[n.family as usize].stores.arms.rifles.min(2) as f32;
+    (0.6 + n.emotions.anger / 100.0
+        + 0.5 * n.temperament.courage
+        + 0.25 * s.riders.len() as f32
+        + 0.15 * rifles)
+        .clamp(0.5, 2.2)
 }
 
 /// You made your appeals; `right` of them landed. Oratory carries the rest.
@@ -287,7 +296,15 @@ pub fn face(world: &mut World, grade: f32) -> Turn {
     }
 }
 
+/// Something loaded and within reach.
+pub fn armed(world: &World) -> bool {
+    world.families[0].stores.arms.ready()
+}
+
 pub fn draw(world: &mut World, how: DrawEnd) {
+    if matches!(how, DrawEnd::Fired(_)) {
+        super::arms::fire(world, 0);
+    }
     let end = match how {
         DrawEnd::Fired(Shot::Kill) => End::Shot { killed: true },
         DrawEnd::Fired(Shot::Wound) => End::Shot { killed: false },
@@ -705,6 +722,7 @@ pub fn ambush(world: &mut World, plan: &AmbushPlan, fired: Option<(NpcId, Shot)>
     let Some((hit, shot)) = fired else {
         return true;
     };
+    super::arms::fire(world, 0);
     world.npc_mut(PLAYER).alibi = None;
     world.npc_mut(PLAYER).violence = world.npc(PLAYER).violence.saturating_add(1);
     // A bright moon shows the muzzle flash and the man behind it.

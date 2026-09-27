@@ -4,6 +4,7 @@
 //! and calls the player verbs; the headless runner just prints what happens.
 
 pub mod action;
+pub mod arms;
 pub mod attribution;
 pub mod bees;
 pub mod bison;

@@ -5,7 +5,7 @@
 //!
 //! Debug knobs (env vars): BK_SEED, BK_START_DAYS (run the sim ahead before
 //! showing it), BK_DAY_SECONDS (clock speed), BK_SCREEN (county, claim,
-//! lawrence, franklin, lecompton), BK_PLAY (gate, door, raid, ambush: start
+//! lawrence, franklin, lecompton), BK_PLAY (gate, door, raid, ambush, bench: start
 //! in one of the action games against the Pikes).
 
 // Bevy systems take their world as arguments; long parameter lists and
@@ -272,6 +272,9 @@ fn debug_play(
         Ok("raid") => {
             raid.plan = action::raid_plan(world, pike);
             next.set(Screen::Raid);
+        }
+        Ok("bench") => {
+            game.craft(world, bleeding_kansas::sim::arms::Craft::Balls, 1.0);
         }
         Ok("ambush") => {
             if let Some(plan) = action::ambush_plan(world, pike) {

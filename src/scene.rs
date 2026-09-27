@@ -202,7 +202,15 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                             crate::panels::gendered("Face him down", woman),
                             Cmd::Standoff(Approach::Face),
                         ),
-                        item("Go for your gun", Cmd::Standoff(Approach::Draw)),
+                        crate::cmds::when(
+                            if action::armed(world) {
+                                "Go for your gun"
+                            } else {
+                                "Go for your gun (nothing loaded to hand)"
+                            },
+                            Cmd::Standoff(Approach::Draw),
+                            action::armed(world),
+                        ),
                         item(stand, Cmd::StandAside),
                     ],
                 ),

@@ -14,6 +14,7 @@
 
 use bevy::prelude::*;
 use bleeding_kansas::sim::action::{self, AmbushPlan, DrawEnd, Mood, Shot, Turn};
+use bleeding_kansas::sim::arms::{self, Craft};
 use bleeding_kansas::sim::world::World;
 
 use crate::scenery::Art;
@@ -81,6 +82,19 @@ pub enum Phase {
         /// The man you came for rides in front.
         target_leads: bool,
         sway: f32,
+    },
+    /// At the bench: a marker runs the bar; strike when it's in the sweet spot.
+    Craft {
+        craft: Craft,
+        pos: f32,
+        dir: f32,
+        speed: f32,
+        center: f32,
+        band: f32,
+        hits: u8,
+        tries: u8,
+        /// Last stroke, for the word on screen.
+        last: Option<bool>,
     },
     After {
         text: String,
@@ -176,6 +190,29 @@ impl Game {
             breath: BREATH,
             target_leads,
             sway: action::sway(world),
+        };
+    }
+
+    /// An evening at the bench.
+    pub fn craft(&mut self, world: &World, craft: Craft, now: f64) {
+        self.seed = (now * 1e6) as u64 ^ 0xA076_1D64_78BD_642F;
+        self.cast = None;
+        let center = self.roll() * 1.4 - 0.7;
+        self.phase = Phase::Craft {
+            craft,
+            pos: -1.0,
+            dir: 1.0,
+            // A pour won't wait; a maul swings slower.
+            speed: match craft {
+                Craft::Balls => 2.1,
+                Craft::Cartridges => 1.6,
+                Craft::Rails => 1.2,
+            },
+            center,
+            band: arms::knack(world, craft),
+            hits: 0,
+            tries: 0,
+            last: None,
         };
     }
 
@@ -739,6 +776,58 @@ pub fn play(
                 }
             }
         }
+        Phase::Craft {
+            craft,
+            mut pos,
+            mut dir,
+            speed,
+            mut center,
+            band,
+            mut hits,
+            mut tries,
+            mut last,
+        } => {
+            pos += dir * speed * dt;
+            if pos.abs() >= 1.0 {
+                pos = pos.clamp(-1.0, 1.0);
+                dir = -dir;
+            }
+            if fire {
+                let hit = (pos - center).abs() < band;
+                hits += hit as u8;
+                tries += 1;
+                last = Some(hit);
+                // The sweet spot moves: a new mold, a new sheet, a new check in the log.
+                center = game.roll() * 1.4 - 0.7;
+            }
+            if tries >= craft.strokes() {
+                let made = arms::craft(world, craft, hits, tries);
+                after(match (craft, made) {
+                    (_, None) => "Nothing to work with tonight.".to_string(),
+                    (Craft::Balls, Some(n)) => format!(
+                        "{hits} of {tries} pours true. {n} balls cooling on the hearth; the rest is spatter on the floor."
+                    ),
+                    (Craft::Cartridges, Some(n)) => format!(
+                        "{hits} of {tries} rolled tight. {n} cartridges in the box; the rest leak powder."
+                    ),
+                    (Craft::Rails, Some(n)) => format!(
+                        "{hits} of {tries} blows found the grain. {n} rails stacked by the fence line."
+                    ),
+                })
+            } else {
+                Phase::Craft {
+                    craft,
+                    pos,
+                    dir,
+                    speed,
+                    center,
+                    band,
+                    hits,
+                    tries,
+                    last,
+                }
+            }
+        }
         Phase::After { text, left } => {
             let left = left - dt;
             if left <= 0.0 || (left < 2.6 && (fire || keys.just_pressed(KeyCode::Enter))) {
@@ -819,6 +908,7 @@ pub fn draw(
     let mut horizon = 250.0;
     let mut needle_x = 0.0;
     let mut zone_w = 0.0;
+    let mut zone_c = 0.0;
     let mut sights = game.aim;
 
     let gate_men = |shake: f32| {
@@ -961,6 +1051,54 @@ pub fn draw(
                 add(c, *target_leads);
             }
         }
+        Phase::Craft {
+            craft,
+            pos,
+            center,
+            band,
+            hits,
+            tries,
+            last,
+            ..
+        } => {
+            title = format!("At the bench: {}", craft.label());
+            body = format!(
+                "{}{} Space or click when the needle's in the green.",
+                match last {
+                    Some(true) => "True. ",
+                    Some(false) => "Off. ",
+                    None => "",
+                },
+                match craft {
+                    Craft::Balls =>
+                        "Lead in the ladle, mold on the hearth. Pour too soon it's hollow, too late it's slag.",
+                    Craft::Cartridges => "Paper, powder, ball, a twist and a lick. Mind the lamp.",
+                    Craft::Rails =>
+                        "Wedge in the check, maul overhead. Hit it where the grain opens.",
+                }
+            );
+            show_bar = true;
+            needle_x = *pos;
+            zone_w = *band;
+            zone_c = *center;
+            big = format!("{hits}/{}", craft.strokes());
+            fuse = 1.0 - *tries as f32 / craft.strokes() as f32;
+            let (prop, size) = match craft {
+                Craft::Rails => (art.rail.clone(), Vec2::new(288.0, 96.0)),
+                _ => (art.rifles.clone(), Vec2::new(224.0, 192.0)),
+            };
+            people.push((
+                prop,
+                Vec2::new(STAGE.x / 2.0 - size.x / 2.0, 250.0 - size.y),
+                size,
+                Color::srgb(0.93, 0.89, 0.80),
+                String::new(),
+                false,
+            ));
+            // Lamplight on the bench.
+            sky = Color::srgb(0.62, 0.50, 0.34);
+            ground = Color::srgb(0.30, 0.20, 0.12);
+        }
         Phase::After { text, .. } => {
             title = "After".into();
             body = text.clone();
@@ -1047,7 +1185,7 @@ pub fn draw(
             }
             Act::Zone => {
                 node.width = Val::Px(zone_w * 300.0 * 2.0);
-                node.left = Val::Px(300.0 - zone_w * 300.0);
+                node.left = Val::Px(300.0 + (zone_c - zone_w) * 300.0);
             }
             Act::Needle => node.left = Val::Px(298.0 + needle_x * 300.0),
             Act::Fuse => node.width = Val::Px(STAGE.x * fuse.clamp(0.0, 1.0)),

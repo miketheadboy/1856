@@ -11,7 +11,8 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 - The Bevy view: three scales (county map, your claim on foot, town
   streets), command windows on things, letterboxed scenes, a status screen
   and the paper. Phase B's action games: standoffs at the gate, raids at
-  night, ambush on the road. Next: Phase C, stockpiles and arms.
+  night, ambush on the road. Phase C's armories, the bench, crates of
+  "books" and posse searches. Next: Phase D, hands and hired guns.
 
 ## Everything asked for, and where it went
 
@@ -38,8 +39,8 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 | constructive/destructive environment | first pass done | `homestead`, `geography` (stumps, scorch) |
 | clean UI; closer and wider views; situational styles like FF7; kill the button wall | done (Phase A) | `county.rs`, `claim.rs`, `town.rs`, `walk.rs`, `scene.rs`, `ui.rs` |
 | action and violence, and how to avoid it; shows of force; stealth; assassinations; minigames (fun, skill based, a little twitchy) | done (Phase B) | `action`, `duel.rs`, `raid.rs` |
-| stockpiles, weapons, ammo, materials, crafting | **next** | **Phase C** |
-| assign tasks to family/faction/hired hands; mercenaries; bounty hunters (be one or run from one) | planned | **Phase D** |
+| stockpiles, weapons, ammo, materials, crafting | done (Phase C) | `arms`, the bench in `duel.rs` |
+| assign tasks to family/faction/hired hands; mercenaries; bounty hunters (be one or run from one) | **next** | **Phase D** |
 | voice: 1850s humor, self-aware, Deadwood-ornate, ~75% Milch / 25% Heidecker–Turkington | planned | **Phase E** |
 | language quirks that spread through families and friends and evolve with the world | planned | **Phase E** |
 | a portion of Crusader Kings 3: schemes, dynasty, traits and stress, emergent narrative | planned | **Phase F** |
@@ -122,7 +123,22 @@ hired men at your side (Phase D) in the stare.
 4. The papers still decide whether you were a patriot or a terrorist.
    No bombings: arson, ambush, raids and cannon were the violence here.
 
-## Phase C — stockpiles and crafting
+## Phase C — stockpiles and crafting — DONE
+
+Shipped: every house has an armory (Sharps, old guns, lead, balls,
+cartridges, rails) and a hiding place. The bench is a timing minigame (a
+needle and a moving sweet spot; knack widens it): cast balls from lead,
+roll cartridges from balls and powder, split rails from timber. Rails mend
+fence three times as fast. Every shot in a draw or an ambush spends a
+round; no round, no shot. Rifles steady your sights, stiffen your nerve,
+and lean harder on you when they're in someone else's saddle. Send east
+from the Lawrence post office for a crate of books ($20): due on a
+Wednesday, seized at Lexington landing in a blockade. The Emigrant Aid men
+ship rifles to bold Free-State houses in 1855–56; Missouri arms the other
+side. Three days after a pro-slavery muster the posse searches Free-State
+houses; the hiding place decides what it finds (buried guns are safe and
+useless at the gate). `lab arms` shows it. Left for later: shotguns as a
+separate kind, caps, harness.
 
 - Goods: rifles (Sharps — "Beecher's Bibles", shipped in crates marked as
   books), shotguns, powder, lead, caps, cartridges, rails, shingles, iron.

@@ -47,6 +47,7 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::railroad::on_event(world, ev);
     super::market::on_event(world, ev);
     super::action::on_event(world, ev);
+    super::arms::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.

@@ -226,7 +226,7 @@ impl Life {
         x / (x + 200.0)
     }
 
-    fn learn(&mut self, s: Skill, amount: f32) {
+    pub(crate) fn learn(&mut self, s: Skill, amount: f32) {
         let mood = if self.spirits < 20.0 { 0.5 } else { 1.0 };
         self.xp[s.index()] += amount * mood;
     }

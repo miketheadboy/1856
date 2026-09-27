@@ -991,6 +991,33 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 )
             }
         }
+        EventKind::ArmsArrived { family, rifles } => format!(
+            "[MAIL] A crate of books for {} off the Westport hack: {} Sharps rifle{} under the hymnals",
+            family_label(world, family),
+            rifles,
+            if rifles == 1 { "" } else { "s" }
+        ),
+        EventKind::Intercepted { family, rifles } => format!(
+            "[RIVER] Bibles for {} opened at Lexington landing: {} rifle{} seized for the Territory",
+            family_label(world, family),
+            rifles,
+            if rifles == 1 { "" } else { "s" }
+        ),
+        EventKind::Searched { family, seized } => {
+            if seized > 0 {
+                format!(
+                    "[POSSE] The sheriff's men turned out {} and carried off {} rifle{}",
+                    house(world, family),
+                    seized,
+                    if seized == 1 { "" } else { "s" }
+                )
+            } else {
+                format!(
+                    "[POSSE] The sheriff's men turned out {} and went away with nothing",
+                    house(world, family)
+                )
+            }
+        }
         EventKind::ShotAt { shooter, target } => format!(
             "[NIGHT] A shot from the dark at {} on the road. It missed{}",
             who(world, target),
@@ -1013,6 +1040,14 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Retaliation::Ambush => "with a rifle",
             }
         ),
+    }
+}
+
+fn house(world: &World, family: u32) -> String {
+    if family == 0 {
+        "your house".into()
+    } else {
+        format!("the {} house", world.families[family as usize].surname)
     }
 }
 
@@ -1045,6 +1080,8 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
         EventKind::Gossip { .. } | EventKind::Grief { .. } => false,
         EventKind::Retaliation { .. } | EventKind::Spared { .. } => omniscient,
         EventKind::Prowler { seen, .. } => omniscient || seen > 0,
+        EventKind::ArmsArrived { family, .. } => omniscient || family == 0,
+        EventKind::Searched { family, seized } => omniscient || family == 0 || seized > 0,
         EventKind::SeekerAtDoor { family, .. }
         | EventKind::Sheltered { family, .. }
         | EventKind::TurnedAway { family, .. } => omniscient || family == 0,

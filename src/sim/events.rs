@@ -532,6 +532,21 @@ pub enum EventKind {
         shooter: NpcId,
         target: NpcId,
     },
+    /// A crate of "books" came in on the Wednesday hack.
+    ArmsArrived {
+        family: FamilyId,
+        rifles: u8,
+    },
+    /// The river towns opened the crate first.
+    Intercepted {
+        family: FamilyId,
+        rifles: u8,
+    },
+    /// The sheriff's posse turned the house over. `seized`: rifles taken.
+    Searched {
+        family: FamilyId,
+        seized: u8,
+    },
     /// Someone decided to act on a belief. Resolved by the retaliation system.
     Retaliation {
         actor: NpcId,

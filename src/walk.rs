@@ -290,6 +290,7 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
                 when("Write home", Cmd::Do(Activity::WriteHome), f),
             ];
             items.extend(cmds::door_choices(world));
+            items.push(item("The workbench...", Cmd::Open(Sub::Bench)));
             items.push(item("Hard times...", Cmd::Open(Sub::HardTimes)));
             items.push(item("Take stock", Cmd::Status));
             items.push(back);
@@ -457,8 +458,20 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
         }
         SpotKind::PostOffice => MenuSpec::new(
             "The post office",
-            "Mail comes Wednesdays, when it comes at all.",
-            vec![when("Write home", Cmd::Do(Activity::WriteHome), f), back],
+            "Mail comes Wednesdays, when it comes at all. The Emigrant Aid men leave a catalogue of hymnals on the counter, and wink.",
+            vec![
+                when("Write home", Cmd::Do(Activity::WriteHome), f),
+                when(
+                    format!(
+                        "Send east for a crate of books (${})",
+                        bleeding_kansas::sim::arms::RIFLE_PRICE
+                    ),
+                    Cmd::OrderRifles,
+                    world.families[0].stores.arms.on_order.is_none()
+                        && world.families[0].stores.cash >= bleeding_kansas::sim::arms::RIFLE_PRICE,
+                ),
+                back,
+            ],
         ),
         SpotKind::Barbershop => MenuSpec::new(
             "The barbershop",

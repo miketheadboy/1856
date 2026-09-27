@@ -213,6 +213,23 @@ pub fn household(world: &World) -> String {
             "burned"
         },
     );
+    let a = &hh.arms;
+    s.push_str(&format!(
+        "\nArms: {} Sharps, {} old gun{}, {} balls, {} cartridges, {:.0} lb lead, {} rails. Kept {}.{}",
+        a.rifles,
+        a.guns,
+        if a.guns == 1 { "" } else { "s" },
+        a.balls,
+        a.cartridges,
+        a.lead,
+        a.rails,
+        a.hide.label(),
+        if a.on_order.is_some() {
+            " A crate of books is coming."
+        } else {
+            ""
+        }
+    ));
     s.push('\n');
     s.push_str(&farmwork::status(world));
     if world.pending_favor.is_some() {

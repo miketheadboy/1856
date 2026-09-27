@@ -25,7 +25,7 @@ src/main.rs      Bevy view: app wiring, screens (County, Claim, Town). No rules 
   walk.rs        walking, spots, and what each spot offers today
   cmds.rs        commands -> sim verbs; submenus (neighbor, after dark, store...)
   scene.rs       letterboxed moments: the knock, the petition, the muster, riders at the gate...
-  duel.rs        standoffs by hand (talk down, stare down, quick-draw and aim) and the road ambush
+  duel.rs        standoffs by hand (talk down, stare down, quick-draw and aim), the road ambush, the bench
   raid.rs        a neighbor's place at night: lantern cones, a dog, crawl, hold E to do it
   ui.rs          blue command windows, toast, top bar, status (Tab), paper (N)
   panels.rs      text readouts; scenery.rs map art, seasons, weather, night
@@ -64,6 +64,7 @@ Sim modules (`src/sim/`):
 | `bees` | husking bees (shuck the host's corn, the red ear), quilting bees (quilts cut winter need), spelling bees, singing school (courting); the union meeting that mixes both sides until tension splits it North and South |
 | `land` | Lawrence town lots through the 1856 emigration, the Sack, the 1857 boom and the Panic; buying a broken family's relinquishment (they depart for the States) |
 | `action` | Phase B: plots against you park at the gate as standoffs (talk, face, draw, back down) or you confront a neighbor; raid plans and ambush plans; the minigame's witnesses are *staged* for the perception system; men faced down are cowed for a season |
+| `arms` | Phase C: each house's armory (Sharps "books" from the East, old guns, lead, balls, cartridges, rails) and where it's hid; the bench (cast, roll, split); Wednesday crates the river towns may seize; the sheriff's posse searching Free-State houses after its musters |
 | `intrigue` | the player's dark verbs: secrets learned at the groggery or by moonlight, blackmail, exposure, sabotage (shoot a cow, foul a well, cut a fence, wet the hay) read through attribution, slander |
 | `railroad` | the Underground Railroad (MVP §25): freedom seekers who pick doors by word and travel in the dark of the moon; families answer by private belief (hide, turn away, turn in for the reward); food as evidence; pursuers who linger and ask; captures read by attribution; harboring charged under the 1855 slave code |
 | `legacy` | the papers write you up (readers take the paper's view of you); a scandal shuts the store's book; your children drift toward your path and, near grown, take after you or rebel |
@@ -92,13 +93,14 @@ cargo run --bin lab --no-default-features -- gate --seeds 30
 cargo run --bin lab --no-default-features -- life preacher --days 540
 cargo run --bin lab --no-default-features -- county --days 730
 cargo run --bin lab --no-default-features -- standoff --seeds 40
+cargo run --bin lab --no-default-features -- arms --days 330
 cargo run --bin headless --no-default-features -- --seed 15 --truth
 cargo run --bin headless --no-default-features -- --survey 30 --days 730
 
 cargo run                                         # the game (needs a display)
 BK_SEED=15 BK_START_DAYS=200 BK_DAY_SECONDS=2 cargo run
 BK_SCREEN=lawrence cargo run                      # start in county|claim|lawrence|franklin|lecompton
-BK_PLAY=gate cargo run                            # straight into gate|door|raid|ambush
+BK_PLAY=gate cargo run                            # straight into gate|door|raid|ambush|bench
 ```
 
 Linux containers need `libwayland-dev libxkbcommon-dev libasound2-dev

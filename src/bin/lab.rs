@@ -19,6 +19,8 @@
 //!                            preacher, souse, rake, orator, builder, roamer)
 //!   farm                     each family's farm year: planting, hay, corn, fences
 //!   county                   weddings, affairs, scandals, claims, projects across seeds
+//!   arms                     every house's guns, rounds and hiding place; shipments,
+//!                            seizures and searches over --days
 //!   standoff                 the men who'd come to your gate: their draw, what drives
 //!                            them, and how often each way of meeting them works
 //!   metrics <file.csv>       daily metrics for charts
@@ -105,15 +107,51 @@ fn main() {
         "trace" => dump(&o, "trace.tsv", debug::trace_tsv),
         "time" => time(&o),
         "standoff" => standoff(&o),
+        "arms" => arms_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
                 .lines()
-                .take(26)
+                .take(28)
                 .map(|l| l.trim_start_matches("//!").trim_start_matches(' '))
                 .collect::<Vec<_>>()
                 .join("\n")
         ),
+    }
+}
+
+/// Phase C: who's armed, who sent east, what the posse carried off.
+fn arms_lens(o: &Opts) {
+    let mut w = World::new(o.seed);
+    w.run_days(o.days);
+    println!("seed {} after {} days ({})\n", o.seed, o.days, w.day);
+    println!(
+        "{:<12} {:<11} {:>6} {:>4} {:>6} {:>6}  kept",
+        "family", "side", "rifles", "guns", "balls", "carts"
+    );
+    for f in w.families.iter().filter(|f| !f.store) {
+        let a = &f.stores.arms;
+        println!(
+            "{:<12} {:<11} {:>6} {:>4} {:>6} {:>6}  {}",
+            f.surname,
+            format!("{:?}", f.faction),
+            a.rifles,
+            a.guns,
+            a.balls,
+            a.cartridges,
+            a.hide.label()
+        );
+    }
+    println!();
+    for e in &w.events {
+        if matches!(
+            e.kind,
+            EventKind::ArmsArrived { .. }
+                | EventKind::Intercepted { .. }
+                | EventKind::Searched { .. }
+        ) {
+            println!("{}", chronicle::debug_line(&w, e, true));
+        }
     }
 }
 
@@ -157,7 +195,7 @@ fn standoff(o: &Opts) {
     let mut talk = [0u32; 4];
     let mut face = [0u32; 3];
     let mut beaten_dead = 0;
-    for seed in 0..o.seeds as u64 {
+    for seed in 0..o.seeds {
         let fresh = || {
             let mut w = World::new(seed);
             w.autopilot_player = false;

@@ -348,6 +348,7 @@ pub fn drive_menu(
     }
     match out.play {
         Some(cmds::Play::Standoff(a)) => game.start(&sim.0, a, time.elapsed_secs_f64()),
+        Some(cmds::Play::Craft(c)) => game.craft(&sim.0, c, time.elapsed_secs_f64()),
         Some(cmds::Play::Ambush(t)) => {
             if let Some(plan) = bleeding_kansas::sim::action::ambush_plan(&sim.0, t) {
                 game.ambush(&sim.0, plan, time.elapsed_secs_f64());

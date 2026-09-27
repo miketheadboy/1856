@@ -3,6 +3,7 @@
 //! outcome; it forwards a verb and reports what the chronicle says happened.
 
 use bleeding_kansas::sim::action;
+use bleeding_kansas::sim::arms::{self, Craft, Hide};
 use bleeding_kansas::sim::chronicle;
 use bleeding_kansas::sim::civic::Project;
 use bleeding_kansas::sim::economy::Choice;
@@ -31,6 +32,8 @@ pub enum Sub {
     Travel,
     Leverage,
     Sue,
+    /// The workbench: cast, roll, split, and where the guns go.
+    Bench,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -51,6 +54,14 @@ pub enum Cmd {
     Raid(NpcId),
     /// Lie in wait on their road tonight.
     Ambush(NpcId),
+    /// An evening at the bench.
+    Craft(Craft),
+    /// Put the guns somewhere.
+    Hide(Hide),
+    /// Send east for a crate of books.
+    OrderRifles,
+    BuyGun,
+    BuyLead,
     BeSeen,
     /// Sleep till morning: the day ends now.
     Rest,
@@ -107,6 +118,7 @@ pub enum Play {
     Standoff(Approach),
     Raid(NpcId),
     Ambush(NpcId),
+    Craft(Craft),
 }
 
 /// What running a command did.
@@ -212,6 +224,38 @@ pub fn run(world: &mut World, cmd: Cmd) -> Outcome {
             out.status = true;
             return out;
         }
+        Cmd::Craft(c) => {
+            if !arms::can_craft(world, c) {
+                return toast("Nothing to work with, or you've had your evening at the bench.");
+            }
+            out.play = Some(Play::Craft(c));
+            return out;
+        }
+        Cmd::Hide(h) => {
+            arms::hide(world, 0, h);
+            return toast(&format!("The guns are {} now.", h.label()));
+        }
+        Cmd::OrderRifles => {
+            return toast(if arms::order(world, 0, 1) {
+                "The letter goes east with twenty dollars in it. Books, it says. Two weeks, three, if the river's open."
+            } else {
+                "Twenty dollars you haven't got, or a crate already coming."
+            });
+        }
+        Cmd::BuyGun => {
+            return toast(if arms::buy_gun(world, 0) {
+                "An old fowling piece. Dunmore charged you the Yankee price and smiled doing it."
+            } else {
+                "Not with what's in your purse."
+            });
+        }
+        Cmd::BuyLead => {
+            return toast(if arms::buy_lead(world, 0) {
+                "Five pounds of bar lead, heavy as a conscience."
+            } else {
+                "Not with what's in your purse."
+            });
+        }
         Cmd::Close => return out,
     };
     out.toast = news_since(world, before).or_else(|| {
@@ -304,7 +348,15 @@ fn after_dark(world: &World, t: NpcId) -> MenuSpec {
             Cmd::Raid(t),
             night && plan.is_some(),
         ),
-        when("Lie in wait on their road", Cmd::Ambush(t), night),
+        when(
+            if action::armed(world) {
+                "Lie in wait on their road"
+            } else {
+                "Lie in wait on their road (nothing loaded)"
+            },
+            Cmd::Ambush(t),
+            night && action::armed(world),
+        ),
         when("Whisper against them", Cmd::Do(Activity::Slander(t)), free),
         when(
             "Ask for money to keep quiet",
@@ -407,10 +459,60 @@ pub fn menu(world: &World, sub: Sub) -> MenuSpec {
                         format!("Buy whiskey: {}", line(Good::Whiskey)),
                         Cmd::Buy(Good::Whiskey, 1.0),
                     ),
+                    item(
+                        format!("Buy an old shotgun: ${}", arms::gun_price(world, 0)),
+                        Cmd::BuyGun,
+                    ),
+                    item(
+                        format!("Buy bar lead, 5 lb: ${}", arms::LEAD_PRICE),
+                        Cmd::BuyLead,
+                    ),
                     item("Sell...", Cmd::Open(Sub::StoreSell)),
                     item("Put it on the book", Cmd::Choose(Choice::Borrow)),
                     item("Walk out", Cmd::Close),
                 ],
+            )
+        }
+        Sub::Bench => {
+            let h = &world.families[0].stores;
+            let a = &h.arms;
+            let mut items: Vec<Item> = Craft::ALL
+                .into_iter()
+                .map(|c| {
+                    let need = match c {
+                        Craft::Balls => "a pound of lead",
+                        Craft::Cartridges => "ten balls and a measure of powder",
+                        Craft::Rails => "a load of timber",
+                    };
+                    when(
+                        format!("{} ({need})", capitalize(c.label())),
+                        Cmd::Craft(c),
+                        arms::can_craft(world, c),
+                    )
+                })
+                .collect();
+            for place in Hide::ALL {
+                items.push(when(
+                    format!("Keep the guns {}", place.label()),
+                    Cmd::Hide(place),
+                    a.hide != place,
+                ));
+            }
+            items.push(item("Leave it", Cmd::Close));
+            MenuSpec::new(
+                "The workbench",
+                format!(
+                    "{} Sharps, {} old gun{}. {} balls, {} cartridges, {:.0} lb lead, {} rails. The guns are {}.",
+                    a.rifles,
+                    a.guns,
+                    if a.guns == 1 { "" } else { "s" },
+                    a.balls,
+                    a.cartridges,
+                    a.lead,
+                    a.rails,
+                    a.hide.label()
+                ),
+                items,
             )
         }
         Sub::StoreSell => MenuSpec::new(
@@ -539,4 +641,12 @@ pub fn season_task(world: &World) -> String {
 
 pub fn election(world: &World) -> Option<&'static law::ElectionDay> {
     law::election_today(world)
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect(),
+        None => String::new(),
+    }
 }

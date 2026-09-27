@@ -62,6 +62,8 @@ pub struct Household {
     pub credit_cut_until: Option<Day>,
     /// Well, smokehouse, crib, cellar, rail fence (`homestead`).
     pub improvements: super::homestead::Improvements,
+    /// Guns, lead, balls, cartridges, rails, and where the guns are hid (`arms`).
+    pub arms: super::arms::Armory,
 }
 
 impl Household {

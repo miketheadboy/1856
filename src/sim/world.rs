@@ -535,6 +535,7 @@ impl World {
         world.roll_weather();
         world.civic = super::civic::Civic::founding(&mut world);
         world.law = super::law::Law::founding(&world);
+        super::arms::founding(&mut world);
         world
     }
 
@@ -778,6 +779,7 @@ impl World {
         super::farmwork::daily(self);
         super::homestead::daily(self);
         super::mail::daily(self);
+        super::arms::daily(self);
         super::law::daily(self);
         super::bees::daily(self);
         super::railroad::daily(self);
@@ -1011,6 +1013,7 @@ impl World {
         super::legacy::monthly(self);
         super::land::monthly(self);
         super::homestead::monthly(self);
+        super::arms::monthly(self);
         super::civic::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);
