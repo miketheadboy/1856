@@ -302,9 +302,11 @@ pub fn armed(world: &World) -> bool {
 }
 
 pub fn draw(world: &mut World, how: DrawEnd) {
-    if matches!(how, DrawEnd::Fired(_)) {
-        super::arms::fire(world, 0);
-    }
+    // An empty gun, or one buried in the timber, clicks.
+    let how = match how {
+        DrawEnd::Fired(_) if !armed(world) || !super::arms::fire(world, 0) => DrawEnd::Slow,
+        h => h,
+    };
     let end = match how {
         DrawEnd::Fired(Shot::Kill) => End::Shot { killed: true },
         DrawEnd::Fired(Shot::Wound) => End::Shot { killed: false },
@@ -934,6 +936,17 @@ mod tests {
                 .any(|e| matches!(e.kind, EventKind::ShotAt { target, .. } if target == t))
         );
         assert!(w.npc(t).alive);
+    }
+
+    #[test]
+    fn an_empty_gun_clicks() {
+        let (mut w, t) = at_gate(6);
+        w.families[0].stores.arms.balls = 0;
+        w.families[0].stores.arms.cartridges = 0;
+        draw(&mut w, DrawEnd::Fired(Shot::Kill));
+        assert!(w.npc(t).alive);
+        let me = w.npc(PLAYER);
+        assert!(!me.alive || me.wounded);
     }
 
     #[test]

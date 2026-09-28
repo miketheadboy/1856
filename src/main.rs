@@ -311,8 +311,14 @@ fn advance_calendar(
     }
 }
 
-fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut clock: ResMut<Clock>, menu: Res<ui::Menu>) {
-    if keys.just_pressed(KeyCode::Space) && !menu.is_open() {
+fn keyboard(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut clock: ResMut<Clock>,
+    menu: Res<ui::Menu>,
+    game: Res<duel::Game>,
+) {
+    // Space is the trigger in the games; it only pauses the clock outside them.
+    if keys.just_pressed(KeyCode::Space) && !menu.is_open() && !game.active() {
         clock.paused = !clock.paused;
     }
 }

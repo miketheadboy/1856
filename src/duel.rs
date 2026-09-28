@@ -167,6 +167,18 @@ impl Game {
         };
     }
 
+    /// It's come to guns. If yours aren't to hand and loaded, it's over
+    /// before it starts.
+    fn draw_or_nothing(&mut self, world: &mut World) -> Phase {
+        if action::armed(world) {
+            self.draw_phase(world)
+        } else {
+            action::draw(world, DrawEnd::Slow);
+            self.flash = 1.0;
+            after("He reaches, and you've nothing loaded to reach for.")
+        }
+    }
+
     fn draw_phase(&mut self, world: &World) -> Phase {
         let theirs = world
             .action
@@ -530,11 +542,11 @@ pub fn play(
     }
     let fire = mouse.just_pressed(MouseButton::Left) || keys.just_pressed(KeyCode::Space);
     let world = &mut sim.0;
-    let woman = world
-        .action
-        .standoff
+    // Who it was, even after the sim has closed the standoff.
+    let woman = game
+        .cast
         .as_ref()
-        .is_some_and(|s| bleeding_kansas::sim::world::is_woman(world.name(s.actor)));
+        .is_some_and(|c| bleeding_kansas::sim::world::is_woman(world.name(c.0)));
     let phase = std::mem::take(&mut game.phase);
     game.phase = match phase {
         Phase::Idle => Phase::Idle,
@@ -570,7 +582,7 @@ pub fn play(
                         )),
                         Turn::Draw => {
                             toast.say("Words run out. His hand drops to his belt.");
-                            game.draw_phase(world)
+                            game.draw_or_nothing(world)
                         }
                     }
                 } else {
@@ -640,7 +652,7 @@ pub fn play(
                             "You held {:.0}% of it. Not enough. He calls it.",
                             grade * 100.0
                         ));
-                        game.draw_phase(world)
+                        game.draw_or_nothing(world)
                     }
                 }
             } else {
