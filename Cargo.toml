@@ -2,6 +2,33 @@
 name = "bleeding_kansas"
 version = "0.1.0"
 edition = "2024"
+default-run = "bleeding_kansas"
+
+[features]
+default = ["view"]
+# The Bevy front end. The simulation itself has no engine dependency (§21):
+#   cargo run --bin headless --no-default-features
+view = ["dep:bevy"]
 
 [dependencies]
-bevy = "0.18"
+bevy = { version = "0.18", optional = true }
+
+[[bin]]
+name = "bleeding_kansas"
+path = "src/main.rs"
+required-features = ["view"]
+
+[[bin]]
+name = "headless"
+path = "src/bin/headless.rs"
+
+[[bin]]
+name = "lab"
+path = "src/bin/lab.rs"
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "sim"
+harness = false

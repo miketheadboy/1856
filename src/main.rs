@@ -1,44 +1,137 @@
+//! Bevy view over the headless sim (§21 step 2). Three scales, like the old
+//! console RPGs: the county map (wide), your claim and the town streets (on
+//! foot), and scenes for the moments that won't wait. Command windows in
+//! place of a wall of buttons. Every rule lives in `bleeding_kansas::sim`.
+//!
+//! Debug knobs (env vars): BK_SEED, BK_START_DAYS (run the sim ahead before
+//! showing it), BK_DAY_SECONDS (clock speed), BK_SCREEN (county, claim,
+//! lawrence, franklin, lecompton), BK_PLAY (gate, door, raid, ambush, bench: start
+//! in one of the action games against the Pikes).
+
+// Bevy systems take their world as arguments; long parameter lists and
+// query types are how it's written.
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
+mod claim;
+mod cmds;
+mod county;
+mod duel;
+mod panels;
+mod raid;
+mod scene;
+mod scenery;
+mod town;
+mod ui;
+mod walk;
+
 use bevy::prelude::*;
+use bleeding_kansas::sim::world::{NpcId, World};
 
-const GRID_SIZE: i32 = 30;
-const TILE_SIZE: f32 = 24.0;
-const NPC_COUNT: usize = 10;
+const TILE: f32 = 12.0;
 
-#[derive(Component)]
-struct Npc {
-    name: &'static str,
-    mood: i32,
-    opinion_of_player: i32,
-    family: Option<Entity>,
-    alive: bool,
+// Palette: a survey plat with some life in it. Charcoal frame, bone type,
+// live greens and river blue, one oxblood accent and a little brass.
+const CHARCOAL: Color = Color::srgb(0.086, 0.078, 0.071);
+const OXBLOOD: Color = Color::srgb(0.56, 0.17, 0.13);
+const SLATE: Color = Color::srgb(0.40, 0.55, 0.72);
+const INK_GREEN: Color = Color::srgb(0.20, 0.30, 0.18);
+
+/// Map's top-left corner in world coordinates.
+const MAP_ORIGIN: Vec2 = Vec2::new(-624.0, 344.0);
+
+#[derive(Resource)]
+struct Fonts {
+    /// IM Fell English: 17th-century type, digitized with all its grit.
+    display: Handle<Font>,
+    /// EB Garamond: the body text that has to stay readable.
+    body: Handle<Font>,
 }
 
-#[derive(Component)]
-struct InspectionLabel;
-
-#[derive(Component)]
-struct LogLabel;
-
-#[derive(Component)]
-struct KillButton;
-
-#[derive(Resource, Default)]
-struct Selection(Option<Entity>);
-
-#[derive(Resource, Default)]
-struct WorldLog {
-    entries: Vec<String>,
+impl FromWorld for Fonts {
+    fn from_world(world: &mut bevy::ecs::world::World) -> Self {
+        let assets = world.resource::<AssetServer>();
+        Self {
+            display: assets.load("fonts/IMFellEnglish.ttf"),
+            body: assets.load("fonts/EBGaramond.ttf"),
+        }
+    }
 }
 
 #[derive(Resource)]
-struct WanderTimer(Timer);
+struct Sim(World);
 
-#[derive(Message)]
-struct NpcKilled {
-    victim: Entity,
+#[derive(Resource, Default)]
+struct Selection(Option<NpcId>);
+
+#[derive(Resource)]
+struct Clock {
+    timer: Timer,
+    paused: bool,
+}
+
+/// Which scale you're looking at.
+#[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Screen {
+    County,
+    #[default]
+    Claim,
+    Town,
+    /// Someone else's place, at night.
+    Raid,
+}
+
+/// Which town, when the screen is a town.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
+enum TownId {
+    #[default]
+    Lawrence,
+    Franklin,
+    Lecompton,
+}
+
+fn env_num<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+fn tile_to_world(t: (i32, i32)) -> Vec2 {
+    MAP_ORIGIN
+        + Vec2::new(
+            t.0 as f32 * TILE + TILE / 2.0,
+            -(t.1 as f32 * TILE + TILE / 2.0),
+        )
+}
+
+fn text(font: &Handle<Font>, size: f32, color: Color) -> (TextFont, TextColor) {
+    (
+        TextFont {
+            font: font.clone(),
+            font_size: size,
+            ..default()
+        },
+        TextColor(color),
+    )
 }
 
 fn main() {
+    let mut world = World::new(env_num("BK_SEED", 1856));
+    // Fast-forward with the sim running your household, then hand it over.
+    world.run_days(env_num("BK_START_DAYS", 0));
+    world.autopilot_player = false;
+    // Four seconds a day: long enough to choose the day's work, and for
+    // dusk and a moonlit night to pass over the map.
+    let day_seconds: f32 = env_num("BK_DAY_SECONDS", 4.0);
+    let (screen, town) = match std::env::var("BK_SCREEN").as_deref() {
+        Ok("county") => (Screen::County, TownId::Lawrence),
+        Ok("lawrence") => (Screen::Town, TownId::Lawrence),
+        Ok("franklin") => (Screen::Town, TownId::Franklin),
+        Ok("lecompton") => (Screen::Town, TownId::Lecompton),
+        _ => (Screen::Claim, TownId::Lawrence),
+    };
+    let scenes = scene::Scenes::starting_at(world.events.len());
+
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -48,326 +141,184 @@ fn main() {
             }),
             ..default()
         }))
-        .add_message::<NpcKilled>()
+        .insert_resource(ClearColor(CHARCOAL))
+        .init_resource::<Fonts>()
+        .init_resource::<scenery::Art>()
+        .insert_resource(Sim(world))
         .init_resource::<Selection>()
-        .init_resource::<WorldLog>()
-        .insert_resource(WanderTimer(Timer::from_seconds(0.8, TimerMode::Repeating)))
-        .add_systems(Startup, setup)
+        .insert_resource(Clock {
+            timer: Timer::from_seconds(day_seconds, TimerMode::Repeating),
+            paused: false,
+        })
+        .insert_state(screen)
+        .insert_resource(town)
+        .init_resource::<ui::Menu>()
+        .init_resource::<ui::Toast>()
+        .init_resource::<ui::Overlay>()
+        .init_resource::<walk::Bounds>()
+        .init_resource::<county::CountyView>()
+        .init_resource::<duel::Game>()
+        .init_resource::<raid::Raid>()
+        .insert_resource(scenes)
+        .add_systems(
+            Startup,
+            (
+                spawn_camera,
+                scenery::setup,
+                county::setup,
+                ui::setup,
+                scene::setup,
+                duel::setup,
+                debug_play,
+            )
+                .chain(),
+        )
+        .add_systems(OnEnter(Screen::County), county::enter)
+        .add_systems(OnEnter(Screen::Claim), claim::enter)
+        .add_systems(OnExit(Screen::Claim), walk::despawn)
+        .add_systems(OnEnter(Screen::Town), town::enter)
+        .add_systems(OnExit(Screen::Town), walk::despawn)
+        .add_systems(OnEnter(Screen::Raid), raid::enter)
+        .add_systems(OnExit(Screen::Raid), walk::despawn)
         .add_systems(
             Update,
             (
-                wander_npcs,
-                select_npc,
-                update_inspection_panel,
-                kill_selected_npc,
-                process_npc_death,
-                update_log,
+                advance_calendar,
+                keyboard,
+                ui::drive_menu,
+                ui::draw_menu,
+                ui::draw_toast,
+                ui::draw_hud,
+                ui::overlays,
+                ui::dusk,
+                scene::run,
+                duel::play,
+                duel::draw,
             )
                 .chain(),
+        )
+        .add_systems(Update, raid::sneak.run_if(in_state(Screen::Raid)))
+        .add_systems(
+            Update,
+            (
+                county::control,
+                county::click,
+                county::spawn_figures,
+                county::draw_npcs,
+                county::draw_spirits,
+                scenery::seasons,
+                scenery::buildings,
+                scenery::night,
+                scenery::weather,
+                scenery::smoke,
+            )
+                .run_if(in_state(Screen::County)),
+        )
+        .add_systems(
+            Update,
+            (
+                claim::rebuild,
+                claim::kin,
+                walk::walk,
+                walk::interact,
+                walk::rest_key,
+            )
+                .chain()
+                .run_if(in_state(Screen::Claim)),
+        )
+        .add_systems(
+            Update,
+            (town::stroll, walk::walk, walk::interact, walk::rest_key)
+                .chain()
+                .run_if(in_state(Screen::Town)),
         )
         .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut log: ResMut<WorldLog>,
+/// BK_PLAY: drop straight into an action game, for testing by hand.
+fn debug_play(
+    mut sim: ResMut<Sim>,
+    mut game: ResMut<duel::Game>,
+    mut raid: ResMut<raid::Raid>,
+    mut next: ResMut<NextState<Screen>>,
 ) {
-    commands.spawn(Camera2d);
-
-    let grid_width = GRID_SIZE as f32 * TILE_SIZE;
-    let grid_height = GRID_SIZE as f32 * TILE_SIZE;
-    commands.spawn((
-        Mesh2d(meshes.add(Rectangle::new(grid_width, grid_height))),
-        MeshMaterial2d(materials.add(Color::srgb(0.12, 0.18, 0.12))),
-        Transform::from_xyz(-180.0, 0.0, 0.0),
-    ));
-
-    let names = [
-        "Jonas Webb",
-        "Martha Bell",
-        "Cyrus Mallory",
-        "Elias Brown",
-        "Ruth Carter",
-        "Samuel Pike",
-        "Clara Finch",
-        "Thomas Reed",
-        "Ada Mercer",
-        "William Holt",
-    ];
-
-    let mut npc_entities = Vec::with_capacity(NPC_COUNT);
-    for (index, name) in names.iter().enumerate() {
-        let position = Vec3::new(
-            -180.0 + (index as f32 % 5.0) * 92.0,
-            -180.0 + (index as f32 / 5.0).floor() * 120.0,
-            1.0,
-        );
-        let entity = commands
-            .spawn((
-                Sprite {
-                    color: Color::srgb(0.82, 0.67, 0.38),
-                    custom_size: Some(Vec2::splat(18.0)),
-                    ..default()
-                },
-                Transform::from_translation(position),
-                Npc {
-                    name,
-                    mood: 50 + (index as i32 % 4) * 10,
-                    opinion_of_player: 10 - index as i32 * 2,
-                    family: None,
-                    alive: true,
-                },
-            ))
-            .id();
-        npc_entities.push(entity);
-    }
-
-    for (index, entity) in npc_entities.iter().enumerate() {
-        let family = if index < 4 {
-            Some(npc_entities[(index + 1) % 4])
-        } else {
-            None
-        };
-        commands.entity(*entity).insert(Npc {
-            name: names[index],
-            mood: 50 + (index as i32 % 4) * 10,
-            opinion_of_player: 10 - index as i32 * 2,
-            family,
-            alive: true,
-        });
-    }
-
-    log.entries.push(
-        "[WORLD] Winter 1855. Click a neighbor to inspect them; select KILL to test the cascade."
-            .into(),
-    );
-
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            right: Val::Px(24.0),
-            top: Val::Px(24.0),
-            width: Val::Px(360.0),
-            height: Val::Percent(92.0),
-            padding: UiRect::all(Val::Px(16.0)),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(12.0),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.04, 0.05, 0.04, 0.94)),
-    ))
-    .with_children(|panel| {
-        panel.spawn((
-            Text::new("BLEEDING KANSAS"),
-            TextFont {
-                font_size: 24.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.88, 0.72, 0.42)),
-        ));
-        panel.spawn((
-            Text::new("Select a neighbor"),
-            TextFont {
-                font_size: 18.0,
-                ..default()
-            },
-            InspectionLabel,
-        ));
-        panel.spawn((
-            Button,
-            Node {
-                width: Val::Px(120.0),
-                height: Val::Px(36.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.35, 0.12, 0.10)),
-            KillButton,
-        ))
-        .with_child((
-            Text::new("KILL"),
-            TextFont {
-                font_size: 16.0,
-                ..default()
-            },
-            TextColor(Color::WHITE),
-        ));
-        panel.spawn((
-            Text::new("CASCADE LOG"),
-            TextFont {
-                font_size: 16.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.72, 0.72, 0.62)),
-        ));
-        panel.spawn((
-            Text::new(""),
-            TextFont {
-                font_size: 13.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.68, 0.74, 0.68)),
-            LogLabel,
-        ));
-    });
-}
-
-fn wander_npcs(
-    time: Res<Time>,
-    mut timer: ResMut<WanderTimer>,
-    mut query: Query<(&Npc, &mut Transform)>,
-) {
-    timer.0.tick(time.delta());
-    if !timer.0.just_finished() {
+    use bleeding_kansas::sim::action;
+    let world = &mut sim.0;
+    let Some(pike) = world
+        .living()
+        .find(|n| {
+            n.faction == bleeding_kansas::sim::Faction::ProSlavery
+                && n.family != 0
+                && !world.families[n.family as usize].store
+                && n.age >= 18
+                && !bleeding_kansas::sim::world::is_woman(&n.name)
+        })
+        .map(|n| n.id)
+    else {
         return;
-    }
-
-    for (npc, mut transform) in &mut query {
-        if npc.alive {
-            let direction = Vec3::new(
-                (transform.translation.y * 0.013).sin() * 7.0,
-                (transform.translation.x * 0.017).cos() * 7.0,
-                0.0,
+    };
+    match std::env::var("BK_PLAY").as_deref() {
+        Ok("gate") => {
+            action::park(
+                world,
+                pike,
+                bleeding_kansas::sim::events::Retaliation::Arson,
+                None,
             );
-            transform.translation += direction;
-            transform.translation.x = transform.translation.x.clamp(-520.0, 140.0);
-            transform.translation.y = transform.translation.y.clamp(-300.0, 300.0);
         }
-    }
-}
-
-fn select_npc(
-    buttons: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
-    camera: Query<(&Camera, &GlobalTransform)>,
-    npcs: Query<(Entity, &GlobalTransform, &Npc)>,
-    mut selection: ResMut<Selection>,
-) {
-    if !buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let Some(cursor) = window.cursor_position() else {
-        return;
-    };
-    let Ok((camera, camera_transform)) = camera.single() else {
-        return;
-    };
-    let Ok(world_position) = camera.viewport_to_world_2d(camera_transform, cursor) else {
-        return;
-    };
-
-    selection.0 = npcs
-        .iter()
-        .filter(|(_, _, npc)| npc.alive)
-        .find(|(_, transform, _)| transform.translation().truncate().distance(world_position) < 18.0)
-        .map(|(entity, _, _)| entity);
-}
-
-fn update_inspection_panel(
-    selection: Res<Selection>,
-    npcs: Query<&Npc>,
-    mut text: Query<&mut Text, With<InspectionLabel>>,
-) {
-    let Ok(mut text) = text.single_mut() else {
-        return;
-    };
-    let Some(entity) = selection.0 else {
-        **text = "Select a neighbor".into();
-        return;
-    };
-    let Ok(npc) = npcs.get(entity) else {
-        **text = "That neighbor is gone".into();
-        return;
-    };
-    **text = format!(
-        "{}\nMood: {}\nOpinion of you: {}",
-        npc.name, npc.mood, npc.opinion_of_player
-    );
-}
-
-fn kill_selected_npc(
-    interactions: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<KillButton>)>,
-    selection: Res<Selection>,
-    npcs: Query<&Npc>,
-    mut events: MessageWriter<NpcKilled>,
-) {
-    for (interaction, mut color) in interactions {
-        if *interaction == Interaction::Pressed {
-            *color = BackgroundColor(Color::srgb(0.55, 0.16, 0.10));
-            if let Some(victim) = selection.0 {
-                if npcs.get(victim).is_ok_and(|npc| npc.alive) {
-                    events.write(NpcKilled { victim });
-                }
+        Ok("door") => {
+            action::confront(world, pike);
+        }
+        Ok("raid") => {
+            raid.plan = action::raid_plan(world, pike);
+            next.set(Screen::Raid);
+        }
+        Ok("bench") => {
+            game.craft(world, bleeding_kansas::sim::arms::Craft::Balls, 1.0);
+        }
+        Ok("ambush") => {
+            if let Some(plan) = action::ambush_plan(world, pike) {
+                game.ambush(world, plan, 1.0);
             }
         }
+        _ => {}
     }
 }
 
-fn process_npc_death(
-    mut events: MessageReader<NpcKilled>,
-    mut npcs: Query<(Entity, &mut Npc, &mut Sprite)>,
-    mut log: ResMut<WorldLog>,
-    selection: Res<Selection>,
+fn spawn_camera(mut commands: Commands) {
+    commands.spawn(Camera2d);
+}
+
+fn advance_calendar(
+    time: Res<Time>,
+    mut clock: ResMut<Clock>,
+    mut sim: ResMut<Sim>,
+    menu: Res<ui::Menu>,
+    overlay: Res<ui::Overlay>,
+    state: Res<State<Screen>>,
 ) {
-    for event in events.read() {
-        let Ok((_, mut victim, mut sprite)) = npcs.get_mut(event.victim) else {
-            continue;
-        };
-        if !victim.alive {
-            continue;
-        }
-        victim.alive = false;
-        sprite.color = Color::srgb(0.18, 0.18, 0.18);
-        let victim_name = victim.name;
-        let family = victim.family;
-        log.entries.push(format!("[EVENT] {} was killed.", victim_name));
-        drop(victim);
-        drop(sprite);
-
-        if let Some(family) = family {
-            if let Ok((_, _, mut relative_sprite)) = npcs.get_mut(family) {
-                relative_sprite.color = Color::srgb(0.88, 0.34, 0.22);
-            }
-            if let Ok((_, mut relative, _)) = npcs.get_mut(family) {
-                relative.opinion_of_player -= 40;
-                relative.mood -= 30;
-                log.entries.push(format!(
-                    "[GRIEF] {} grieves {}. Opinion drops to {}.",
-                    relative.name, victim_name, relative.opinion_of_player
-                ));
-                log.entries.push(format!(
-                    "[GOSSIP] {} tells the settlement what you did.",
-                    relative.name
-                ));
-            }
-        }
-        if selection.0 == Some(event.victim) {
-            log.entries.push("[WORLD] The empty place at the table is noticed.".into());
-        }
+    // Nights out take no time on the clock: the day's already done.
+    if clock.paused
+        || !sim.0.player_alive()
+        || ui::blocking(&menu, &overlay)
+        || *state.get() == Screen::Raid
+    {
+        return;
+    }
+    clock.timer.tick(time.delta());
+    if clock.timer.just_finished() {
+        sim.0.advance_day();
     }
 }
 
-fn update_log(log: Res<WorldLog>, mut text: Query<&mut Text, With<LogLabel>>) {
-    if !log.is_changed() {
-        return;
+fn keyboard(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut clock: ResMut<Clock>,
+    menu: Res<ui::Menu>,
+    game: Res<duel::Game>,
+) {
+    // Space is the trigger in the games; it only pauses the clock outside them.
+    if keys.just_pressed(KeyCode::Space) && !menu.is_open() && !game.active() {
+        clock.paused = !clock.paused;
     }
-    let Ok(mut text) = text.single_mut() else {
-        return;
-    };
-    **text = log
-        .entries
-        .iter()
-        .rev()
-        .take(12)
-        .rev()
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("\n");
 }
