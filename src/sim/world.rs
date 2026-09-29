@@ -100,6 +100,12 @@ pub struct Npc {
     pub adopted_by: Option<NationId>,
     /// Sold out and went back to the States.
     pub departed: bool,
+    /// Hat to boots, and where each piece came from (`wardrobe`).
+    pub outfit: super::wardrobe::Outfit,
+    /// Where the current wound is (`psyche::Limb`), while it heals.
+    pub hurt: Option<super::psyche::Limb>,
+    /// Old wounds that healed crooked, as `Limb::bit` flags.
+    pub scars: u8,
 }
 
 impl Npc {
@@ -246,6 +252,10 @@ pub struct World {
     pub hands: super::hands::Hands,
     /// Papers the justice has written, and who's in his jail.
     pub warrants: super::warrant::Warrants,
+    /// Your trunk, and who's recognized what you wear.
+    pub wardrobe: super::wardrobe::Wardrobe,
+    /// Who's sick with what, who's immune, lice, fouled wells, epidemics.
+    pub sickness: super::sickness::Sickness,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -432,6 +442,9 @@ impl World {
             hidden: Hidden::default(),
             adopted_by: None,
             departed: false,
+            outfit: Default::default(),
+            hurt: None,
+            scars: 0,
         }];
         let mut given: Vec<&str> = GIVEN_NAMES.to_vec();
         for family in families.iter() {
@@ -484,6 +497,9 @@ impl World {
                     hidden,
                     adopted_by: None,
                     departed: false,
+                    outfit: Default::default(),
+                    hurt: None,
+                    scars: 0,
                 });
             }
         }
@@ -528,6 +544,8 @@ impl World {
             action: super::action::Action::default(),
             hands: super::hands::Hands::default(),
             warrants: super::warrant::Warrants::default(),
+            wardrobe: super::wardrobe::Wardrobe::default(),
+            sickness: super::sickness::Sickness::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -570,6 +588,8 @@ impl World {
         world.civic = super::civic::Civic::founding(&mut world);
         world.law = super::law::Law::founding(&world);
         super::arms::founding(&mut world);
+        super::wardrobe::founding(&mut world);
+        super::sickness::founding(&mut world);
         world
     }
 
@@ -604,7 +624,11 @@ impl World {
             hidden,
             adopted_by: None,
             departed: false,
+            outfit: Default::default(),
+            hurt: None,
+            scars: 0,
         });
+        self.npcs[id as usize].outfit = super::wardrobe::dress(self, id);
         id
     }
 
@@ -809,6 +833,8 @@ impl World {
         character::daily_evil(self);
         super::ghosts::daily(self);
         super::mortality::daily(self);
+        super::sickness::daily(self);
+        super::sickness::tend(self);
         super::family::daily(self);
         super::farmwork::daily(self);
         super::homestead::daily(self);
@@ -817,6 +843,7 @@ impl World {
         super::hands::daily(self);
         super::law::daily(self);
         super::warrant::daily(self);
+        super::wardrobe::daily(self);
         super::bees::daily(self);
         super::railroad::daily(self);
         super::civic::daily(self);

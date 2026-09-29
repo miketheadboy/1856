@@ -282,8 +282,24 @@ pub fn their_draw(world: &World, actor: NpcId) -> f32 {
     if n.wounded {
         t += 0.15;
     }
+    // A revolver belt and a duster: the gun is already halfway out.
+    t -= n.outfit.bonus().draw;
+    // A ball through the gun arm, fresh or healed crooked.
+    t += arm_trouble(n);
     // Liquor slows everybody but the man who thinks it doesn't.
     t.clamp(0.30, 0.75)
+}
+
+/// The gun arm: a fresh wound in it is worse than an old one.
+fn arm_trouble(n: &super::world::Npc) -> f32 {
+    use super::psyche::Limb;
+    if n.hurt == Some(Limb::GunArm) {
+        0.12
+    } else if n.scars & Limb::GunArm.bit() != 0 {
+        0.05
+    } else {
+        0.0
+    }
 }
 
 /// How much your sights wander, 0 steady .. 1 all over. Marksmanship
@@ -302,7 +318,8 @@ pub fn sway(world: &World) -> f32 {
     } else {
         1.0
     };
-    ((0.85 - 0.6 * me.body.marksmanship + drunk + hurt) * sharps).clamp(0.12, 1.2)
+    let kit = me.outfit.bonus().sway - 2.0 * arm_trouble(me);
+    ((0.85 - 0.6 * me.body.marksmanship + drunk + hurt - kit) * sharps).clamp(0.12, 1.2)
 }
 
 /// Half-width of the calm zone in a staredown, 0..0.5 of the bar. Courage,
@@ -319,7 +336,8 @@ pub fn nerve(world: &World) -> f32 {
     let a = &world.families[0].stores.arms;
     let guns = a.at_hand().min(3) as f32;
     let loaded = if a.rounds() >= 10 { 0.02 } else { 0.0 };
-    0.08 + 0.10 * me.temperament.courage + 0.03 * men + 0.02 * guns + loaded
+    let dressed = me.outfit.bonus().nerve;
+    0.08 + 0.10 * me.temperament.courage + 0.03 * men + 0.02 * guns + loaded + dressed
 }
 
 /// How hard he pushes back in a staredown, 0.5 .. 2.
@@ -504,10 +522,16 @@ fn finish(world: &mut World, end: End) {
         },
     };
     if let Some((who, kind)) = consequence {
-        if lawful {
-            witnessed_lawful(world, who, eyes, kind, Some(id));
+        let fell =
+            matches!(kind, EventKind::Death { .. } | EventKind::Wounded { .. }) && who == PLAYER;
+        let seen = eyes.clone();
+        let cid = if lawful {
+            witnessed_lawful(world, who, eyes, kind, Some(id))
         } else {
-            witnessed(world, who, eyes, kind, Some(id));
+            witnessed(world, who, eyes, kind, Some(id))
+        };
+        if fell {
+            super::wardrobe::lootable(world, actor, cid, seen);
         }
     } else {
         world.run_cascades();
@@ -593,6 +617,8 @@ pub enum Objective {
     Wet,
     /// Crouch under the window and listen.
     Listen,
+    /// In through the back and through the trunks.
+    Steal,
 }
 
 impl Objective {
@@ -605,6 +631,7 @@ impl Objective {
             Objective::Cut => "pull the rails",
             Objective::Wet => "wet the hay",
             Objective::Listen => "listen at the window",
+            Objective::Steal => "go through the trunks",
         }
     }
 
@@ -618,6 +645,7 @@ impl Objective {
             Objective::Cut => 1.8,
             Objective::Wet => 1.8,
             Objective::Listen => 5.0,
+            Objective::Steal => 3.5,
         }
     }
 }
@@ -691,6 +719,15 @@ pub fn raid_plan(world: &World, target: NpcId) -> Option<RaidPlan> {
         objectives.push(Objective::Wet);
     }
     objectives.push(Objective::Listen);
+    if world
+        .npc(target)
+        .outfit
+        .pieces()
+        .any(|p| p.dear || p.price > 2)
+        || st.cash > 0
+    {
+        objectives.push(Objective::Steal);
+    }
     Some(RaidPlan {
         target,
         family: fam,
@@ -705,7 +742,13 @@ pub fn raid_plan(world: &World, target: NpcId) -> Option<RaidPlan> {
         cattle: st.cattle.min(6) as u8,
         hay,
         fences: st.work.fences,
-        stealth: world.npc(PLAYER).body.stealth,
+        stealth: (world.npc(PLAYER).body.stealth + super::wardrobe::of(world, PLAYER).stealth
+            - if world.npc(PLAYER).scars & super::psyche::Limb::Leg.bit() != 0 {
+                0.15
+            } else {
+                0.0
+            })
+        .clamp(0.0, 1.0),
     })
 }
 
@@ -743,6 +786,18 @@ pub fn raid(
         Some(Objective::Wet) => sabotage(world, Cruelty::SpoilHay),
         Some(Objective::Drive) => {
             world.player_steal(target);
+        }
+        Some(Objective::Steal) => {
+            let id = world.emit_root(
+                EventKind::Theft {
+                    thief: PLAYER,
+                    victim: target,
+                    loot: super::events::Loot::Goods,
+                },
+                None,
+            );
+            world.run_cascades();
+            super::wardrobe::loot(world, target, id, &seen_by);
         }
         Some(Objective::Listen) => {
             super::intrigue::learn(world, target);
@@ -845,7 +900,15 @@ pub fn ambush(world: &mut World, plan: &AmbushPlan, fired: Option<(NpcId, Shot)>
     };
     let id = world.emit_root(kind, None);
     world.run_cascades();
-    world.action.staged = None;
+    let eyes = world
+        .action
+        .staged
+        .take()
+        .map(|(_, e)| e)
+        .unwrap_or_default();
+    if shot != Shot::Miss {
+        super::wardrobe::lootable(world, hit, id, eyes);
+    }
     // A man you missed shoots back at the flash.
     if shot != Shot::Kill {
         let back = if shot == Shot::Miss { hit } else { plan.target };

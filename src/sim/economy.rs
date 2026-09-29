@@ -64,6 +64,8 @@ pub struct Household {
     pub improvements: super::homestead::Improvements,
     /// Guns, lead, balls, cartridges, rails, and where the guns are hid (`arms`).
     pub arms: super::arms::Armory,
+    /// Doses in the medicine chest, by `sickness::Remedy`.
+    pub medicine: [u8; super::sickness::MEDS],
 }
 
 impl Household {
@@ -544,6 +546,7 @@ pub fn steal_from(world: &mut World, thief: NpcId, victim_family: FamilyId, vict
     world.families[thief_family].stores.food += match loot {
         Loot::Cow => COW_FOOD,
         Loot::Grain => sack * (0.5 + world.npc(thief).body.strength),
+        Loot::Goods => 0.0,
     };
     world.npc_mut(thief).alibi = None;
     world.emit_root(

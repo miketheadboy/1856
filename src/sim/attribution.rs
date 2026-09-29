@@ -52,7 +52,12 @@ pub fn victim_of(world: &World, event: EventId) -> Option<NpcId> {
         EventKind::Prowler { victim, .. } => Some(victim),
         EventKind::Cruelty {
             victim,
-            act: Cruelty::KillStock | Cruelty::FoulWell | Cruelty::CutFence | Cruelty::SpoilHay,
+            act:
+                Cruelty::KillStock
+                | Cruelty::FoulWell
+                | Cruelty::CutFence
+                | Cruelty::SpoilHay
+                | Cruelty::FouledBlanket,
             ..
         } => Some(victim),
         _ => None,

@@ -19,7 +19,7 @@ use super::psyche::{self, LifeStage};
 use super::romance;
 use super::world::{Faction, NpcId, PLAYER, World};
 
-pub const SKILLS: usize = 9;
+pub const SKILLS: usize = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Skill {
@@ -41,6 +41,8 @@ pub enum Skill {
     Drink,
     /// Where the muskrat run; more pelts off the same line.
     Trapping,
+    /// Herbs and nursing: more bark in the woods, and the sick pull through.
+    Physic,
 }
 
 impl Skill {
@@ -54,6 +56,7 @@ impl Skill {
         Skill::Letters,
         Skill::Drink,
         Skill::Trapping,
+        Skill::Physic,
     ];
 
     pub fn index(self) -> usize {
@@ -71,6 +74,7 @@ impl Skill {
             Skill::Letters => "letters",
             Skill::Drink => "drink",
             Skill::Trapping => "trapping",
+            Skill::Physic => "physic",
         }
     }
 }
@@ -198,6 +202,9 @@ pub struct Life {
     pub ballot: Option<(Day, super::law::Ballot)>,
     /// Children who've come of age in your shadow.
     pub legacies: Vec<NpcId>,
+    /// What your clothes add to each skill (`wardrobe`): a black frock
+    /// preaches, spectacles read.
+    pub gear: [f32; SKILLS],
 }
 
 impl Default for Life {
@@ -215,6 +222,7 @@ impl Default for Life {
             wrote_home: 0,
             ballot: None,
             legacies: Vec::new(),
+            gear: [0.0; SKILLS],
         }
     }
 }
@@ -223,7 +231,7 @@ impl Life {
     /// 0..1, diminishing returns: 200 xp (a season of steady practice) is halfway.
     pub fn skill(&self, s: Skill) -> f32 {
         let x = self.xp[s.index()];
-        x / (x + 200.0)
+        (x / (x + 200.0) + self.gear[s.index()]).min(1.0)
     }
 
     pub(crate) fn learn(&mut self, s: Skill, amount: f32) {

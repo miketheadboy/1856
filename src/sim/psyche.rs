@@ -258,6 +258,43 @@ pub fn would_steal(world: &World, id: NpcId) -> f32 {
 }
 
 /// Average fitness of a family's working hands, 0..1+: drives the harvest.
+/// Where a ball went in. A healing wound and an old one both show: the
+/// gun arm spoils the aim and the draw (`action`), a leg slows the walk and
+/// the work and the crawl (`labor`, raids), the chest turns bad more often
+/// (`sickness`), and a head wound costs memory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Limb {
+    Head,
+    Chest,
+    GunArm,
+    OffArm,
+    Leg,
+}
+
+impl Limb {
+    pub const ALL: [Limb; 5] = [
+        Limb::Head,
+        Limb::Chest,
+        Limb::GunArm,
+        Limb::OffArm,
+        Limb::Leg,
+    ];
+
+    pub fn bit(self) -> u8 {
+        1 << (self as u8)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Limb::Head => "the head",
+            Limb::Chest => "the chest",
+            Limb::GunArm => "the gun arm",
+            Limb::OffArm => "the other arm",
+            Limb::Leg => "the leg",
+        }
+    }
+}
+
 pub fn labor(world: &World, family: u32) -> f32 {
     // Hired out, a man works someone else's ground; in jail, nobody's.
     let hands: Vec<f32> = world
@@ -272,12 +309,23 @@ pub fn labor(world: &World, family: u32) -> f32 {
         .map(|n| {
             let grief = 1.0 - n.emotions.grief / 200.0;
             let wound = if n.wounded { 0.3 } else { 1.0 };
+            let lame = if n.scars & Limb::Leg.bit() != 0 {
+                0.85
+            } else {
+                1.0
+            };
+            let sick = super::sickness::laid_up(world, n.id);
             let survivor = if super::character::is(n, super::character::Archetype::Survivor) {
                 1.3
             } else {
                 1.0
             };
-            (0.5 + n.body.strength) * n.health as f32 / 100.0 * grief * wound * survivor
+            (0.5 + n.body.strength) * n.health as f32 / 100.0
+                * grief
+                * wound
+                * survivor
+                * lame
+                * sick
         })
         .collect();
     if hands.is_empty() {
@@ -332,11 +380,24 @@ pub fn daily(world: &mut World) {
         } else if n.health < 100 {
             n.health += 1;
         }
+        // A buffalo coat against a blizzard; a calico dress against January.
+        let warmth = n.outfit.warmth();
         if exposed {
-            n.health -= (3.0 * frailty).round() as i32;
+            n.health -= (3.0 * frailty * (1.2 - warmth).clamp(0.3, 1.2)).round() as i32;
+        } else if winter && warmth < 0.25 && today.0.is_multiple_of(3) {
+            n.health -= 1;
         }
         if n.wounded && n.health >= 80 {
             n.wounded = false;
+            // Some wounds heal crooked: a stiff arm, a limp, a gap in memory.
+            if let Some(limb) = n.hurt.take()
+                && (today.0 + n.id) % 10 < 3
+            {
+                n.scars |= limb.bit();
+                if limb == Limb::Head {
+                    n.body.recall = (n.body.recall - 0.15).max(0.1);
+                }
+            }
         }
         if winter && stage != LifeStage::Adult && world.rng.chance(0.002) {
             // Winter fevers find the young and the old.

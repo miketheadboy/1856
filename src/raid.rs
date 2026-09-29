@@ -196,6 +196,7 @@ pub fn enter(
         (Objective::Cut, Vec2::new(300.0, 70.0)),
         (Objective::Wet, Vec2::new(830.0, 160.0)),
         (Objective::Listen, Vec2::new(525.0, 385.0)),
+        (Objective::Steal, Vec2::new(430.0, 395.0)),
     ];
     for (o, p) in goals {
         if plan.objectives.contains(&o) {

@@ -2,6 +2,8 @@
 //! not live to adulthood: summer complaint and ague in the hot months, croup
 //! and scarlet fever in the cold, cholera up the river in 1855. Hunger, a
 //! frail constitution and a burned-out house make each of them likelier.
+//! The named killers (measles, whooping cough, diphtheria, the flux) live
+//! in `sickness`; this is the rest: croup, teething fevers, the nameless.
 
 use super::events::{EventKind, Hardship};
 use super::psyche::LifeStage;
@@ -10,10 +12,10 @@ use super::world::{NpcId, World};
 /// Annual risk of dying of sickness, by age.
 pub fn annual_risk(age: u8) -> f32 {
     match age {
-        0 => 0.15,
-        1..=4 => 0.06,
-        5..=9 => 0.015,
-        _ => 0.008,
+        0 => 0.07,
+        1..=4 => 0.02,
+        5..=9 => 0.005,
+        _ => 0.002,
     }
 }
 

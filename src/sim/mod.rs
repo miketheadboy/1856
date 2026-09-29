@@ -37,7 +37,9 @@ pub mod railroad;
 pub mod reconcile;
 pub mod rng;
 pub mod romance;
+pub mod sickness;
 pub mod systems;
+pub mod wardrobe;
 pub mod warrant;
 pub mod world;
 

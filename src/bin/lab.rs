@@ -25,6 +25,9 @@
 //!                            them, and how often each way of meeting them works
 //!   law                      every paper the justice wrote, who it named, who really
 //!                            did it, and how it was served
+//!   sick                     who fell sick with what, who died of it, and what
+//!                            the doctor and the chest did, over --seeds
+//!   dress                    what the county wears, the looks, and whose colors
 //!   hands                    a watch at night and a hired hand, against nobody, over
 //!                            --seeds: riders turned back, fires, strays, timber
 //!   metrics <file.csv>       daily metrics for charts
@@ -114,11 +117,13 @@ fn main() {
         "arms" => arms_lens(&o),
         "law" => law_lens(&o),
         "hands" => hands_lens(&o),
+        "sick" => sick_lens(&o),
+        "dress" => dress_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
                 .lines()
-                .take(32)
+                .take(35)
                 .map(|l| l.trim_start_matches("//!").trim_start_matches(' '))
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -176,6 +181,68 @@ fn law_lens(o: &Opts) {
         l.law_shot,
         l.bounties_paid
     );
+}
+
+/// The sick pass: incidence and deaths by disease across seeds.
+fn sick_lens(o: &Opts) {
+    use bleeding_kansas::sim::sickness;
+    let mut tot: Vec<(sickness::Disease, usize, usize)> = Vec::new();
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        for (d, s, k) in sickness::tally(&w) {
+            match tot.iter_mut().find(|t| t.0 == d) {
+                Some(t) => {
+                    t.1 += s;
+                    t.2 += k;
+                }
+                None => tot.push((d, s, k)),
+            }
+        }
+        if seed == 1 {
+            for e in &w.events {
+                if matches!(
+                    e.kind,
+                    EventKind::Epidemic { .. } | EventKind::DoctorCalled { .. }
+                ) {
+                    println!("{}", chronicle::debug_line(&w, e, true));
+                }
+            }
+            println!();
+        }
+    }
+    println!(
+        "{:<20} {:>8} {:>8}   per seed over {} days",
+        "", "sick", "dead", o.days
+    );
+    for (d, s, k) in tot {
+        println!(
+            "{:<20} {:>8.1} {:>8.2}",
+            d.label(),
+            s as f32 / o.seeds as f32,
+            k as f32 / o.seeds as f32
+        );
+    }
+}
+
+/// The outfit pass: who wears what, and whose colors they show.
+fn dress_lens(o: &Opts) {
+    use bleeding_kansas::sim::wardrobe;
+    let w = world(o);
+    for n in w.living() {
+        let looks: Vec<&str> = n.outfit.looks().iter().map(|l| l.name).collect();
+        println!(
+            "{:<22} {:<11} {:<60} {}{}",
+            n.name,
+            n.faction.label(),
+            wardrobe::describe(&w, n.id),
+            n.outfit
+                .colors()
+                .map(|c| format!("reads {} ", c.label()))
+                .unwrap_or_default(),
+            looks.join(", ")
+        );
+    }
 }
 
 /// Phase D: what a watch and a hired hand are worth, against nobody.

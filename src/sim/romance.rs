@@ -103,7 +103,12 @@ pub fn fidelity(world: &World, id: NpcId) -> f32 {
 /// Charm: talk, nerve, and luck.
 pub fn charm(world: &World, id: NpcId) -> f32 {
     let n = world.npc(id);
-    0.5 * n.temperament.sociability + 0.3 * n.temperament.courage + 0.2 * n.hidden.luck.min(1.5)
+    // A boiled shirt helps; rags don't.
+    let dressed = n.outfit.bonus().charm - 0.2 * n.outfit.wear;
+    0.5 * n.temperament.sociability
+        + 0.3 * n.temperament.courage
+        + 0.2 * n.hidden.luck.min(1.5)
+        + dressed
 }
 
 /// One afternoon of courting. Returns the beloved's affection after.

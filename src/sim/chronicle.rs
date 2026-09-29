@@ -180,6 +180,11 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Hardship::Hunger => "starved",
                 Hardship::Cold => "froze",
                 Hardship::Fever => "died of a fever",
+                Hardship::Sickness(_) => "",
+            };
+            let how = match cause {
+                Hardship::Sickness(d) => format!("died of {}", d.label()),
+                _ => how.to_string(),
             };
             if victim == PLAYER {
                 format!("[DEATH] You {}", how)
@@ -195,6 +200,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             let what = match loot {
                 Loot::Cow => "A cow was taken",
                 Loot::Grain => "A sack of grain was taken",
+                Loot::Goods => "The trunks were gone through",
             };
             let place = if world.npc(victim).family == 0 {
                 "your place".to_string()
@@ -280,6 +286,9 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                     format!("[CRUELTY] The fence at {} was down in the morning{}", place, truth)
                 }
                 Cruelty::SpoilHay => format!("[CRUELTY] The hay at {} was rotting{}", place, truth),
+                Cruelty::FouledBlanket => {
+                    format!("[CRUELTY] Lice in the bedding at {}, from a blanket somebody gave{}", place, truth)
+                }
             }
         }
         EventKind::Trespass { family, nation } => format!(
@@ -1147,6 +1156,44 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 ),
             }
         }
+        EventKind::FellSick { who: w, disease } => {
+            if w == PLAYER {
+                format!("[SICK] You're down with {}", disease.label())
+            } else {
+                format!("[SICK] {} is down with {}", capitalize(&who(world, w)), disease.label())
+            }
+        }
+        EventKind::Recovered { who: w, disease } => format!(
+            "[SICK] {} up again after {}",
+            capitalize(&who(world, w)),
+            disease.label()
+        ),
+        EventKind::Epidemic { disease } => format!(
+            "[RIVER] {} at Westport and Kansas City. The boats keep coming",
+            capitalize(disease.label())
+        ),
+        EventKind::DoctorCalled { family } => format!(
+            "[SICK] {} rode out to {}",
+            super::sickness::DOCTOR,
+            house(world, family)
+        ),
+        EventKind::Gift { from, to } => format!(
+            "[KIND] {} brought {} a blanket against the cold",
+            capitalize(&who(world, from)),
+            who(world, to)
+        ),
+        EventKind::Looted {
+            looter,
+            victim,
+            pieces,
+            ..
+        } => format!(
+            "[BLOOD] {} went through {} pockets and came away with {} thing{}",
+            capitalize(&who(world, looter)),
+            whose(world, victim),
+            pieces,
+            if pieces == 1 { "" } else { "s" }
+        ),
         EventKind::Warrant {
             accused,
             about,
@@ -1306,6 +1353,14 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
         EventKind::Prowler { seen, .. } => omniscient || seen > 0,
         EventKind::ArmsArrived { family, .. } => omniscient || family == 0,
         EventKind::HandTalked { .. } => omniscient,
+        // Sickness in the county is known house by house, and loudly when
+        // it kills; the chronicle keeps to your house and the dead.
+        EventKind::FellSick { who: w, .. } | EventKind::Recovered { who: w, .. } => {
+            omniscient || world.npc(w).family == 0
+        }
+        EventKind::DoctorCalled { family } => omniscient || family == 0,
+        EventKind::Gift { from, .. } => omniscient || from == PLAYER,
+        EventKind::Looted { looter, seen, .. } => omniscient || looter == PLAYER || seen,
         EventKind::Hirelings { payer, printed, .. } => omniscient || payer == PLAYER || printed,
         EventKind::Searched { family, seized } => omniscient || family == 0 || seized > 0,
         EventKind::SeekerAtDoor { family, .. }

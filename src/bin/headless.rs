@@ -132,6 +132,7 @@ fn survey(n: u64, days: u32) {
     let mut with_war = 0;
     let mut totals = (0usize, 0usize, 0usize);
     let mut law = (0usize, 0usize, 0usize);
+    let mut sick = (0usize, 0usize);
     for seed in 1..=n {
         let mut w = World::new(seed);
         w.run_days(days);
@@ -142,6 +143,10 @@ fn survey(n: u64, days: u32) {
         totals.0 += s.deaths;
         totals.1 += s.feuds;
         totals.2 += s.fires.iter().sum::<usize>();
+        for (_, s, d) in bleeding_kansas::sim::sickness::tally(&w) {
+            sick.0 += s;
+            sick.1 += d;
+        }
         let l = bleeding_kansas::sim::warrant::ledger(&w);
         law.0 += l.papers;
         law.1 += l.wrong_man;
@@ -165,6 +170,11 @@ fn survey(n: u64, days: u32) {
         totals.2 as f32 / n as f32,
         totals.0 as f32 / n as f32,
         totals.1 as f32 / n as f32
+    );
+    println!(
+        "sickness: {:.1} down sick and {:.1} dead of it per seed",
+        sick.0 as f32 / n as f32,
+        sick.1 as f32 / n as f32
     );
     println!(
         "the law: {:.1} papers per seed, {:.0}% on the wrong man, {:.1} shot serving them",

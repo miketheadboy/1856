@@ -95,6 +95,8 @@ pub enum Cruelty {
     CutFence,
     /// Wet the haystack: it rots before February.
     SpoilHay,
+    /// A blanket out of a lousy house, given as a kindness.
+    FouledBlanket,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,12 +104,16 @@ pub enum Hardship {
     Hunger,
     Cold,
     Fever,
+    /// A named sickness (`sickness`).
+    Sickness(super::sickness::Disease),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Loot {
     Cow,
     Grain,
+    /// Out of the trunks: Sunday clothes, a watch, what was in the jar.
+    Goods,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -617,6 +623,37 @@ pub enum EventKind {
         accused: NpcId,
         dollars: u16,
         dead: bool,
+    },
+    /// Came down sick.
+    FellSick {
+        who: NpcId,
+        disease: super::sickness::Disease,
+    },
+    /// Got up again.
+    Recovered {
+        who: NpcId,
+        disease: super::sickness::Disease,
+    },
+    /// Word of an epidemic up the river.
+    Epidemic {
+        disease: super::sickness::Disease,
+    },
+    /// The doctor rode out.
+    DoctorCalled {
+        family: FamilyId,
+    },
+    /// Something given, kindly or not.
+    Gift {
+        from: NpcId,
+        to: NpcId,
+    },
+    /// Went through a fallen man's pockets, or a house's trunks. `seen`:
+    /// somebody watched.
+    Looted {
+        looter: NpcId,
+        victim: NpcId,
+        pieces: u8,
+        seen: bool,
     },
     /// Someone decided to act on a belief. Resolved by the retaliation system.
     Retaliation {

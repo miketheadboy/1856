@@ -251,6 +251,26 @@ pub fn household(world: &World) -> String {
     if let Some(c) = bleeding_kansas::sim::hands::guarded(world) {
         s.push_str(&format!(" {} are in the barn.", c.name));
     }
+    s.push_str(&format!(
+        "\nWearing: {}.",
+        bleeding_kansas::sim::wardrobe::describe(world, PLAYER)
+    ));
+    let sick: Vec<String> = world
+        .living()
+        .filter(|n| n.family == 0)
+        .filter_map(|n| {
+            world.sickness.sick(n.id).map(|c| {
+                format!(
+                    "{} ({})",
+                    if n.id == PLAYER { "you" } else { &n.name },
+                    c.disease.label()
+                )
+            })
+        })
+        .collect();
+    if !sick.is_empty() {
+        s.push_str(&format!("\nSick: {}.", sick.join(", ")));
+    }
     let price = bleeding_kansas::sim::warrant::price_on(world, PLAYER);
     if price > 0 {
         s.push_str(&format!("\nWANTED: ${price} on your head."));

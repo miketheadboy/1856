@@ -50,6 +50,8 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::arms::on_event(world, ev);
     super::hands::on_event(world, ev);
     super::warrant::on_event(world, ev);
+    super::wardrobe::on_event(world, ev);
+    super::sickness::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
@@ -224,7 +226,8 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
             } else {
                 1.0
             };
-            (1.0 - 0.6 * n.body.stealth) * ghost
+            let clothes = n.outfit.bonus().stealth;
+            (1.0 - 0.6 * (n.body.stealth + clothes).clamp(0.0, 1.0)) * ghost
         });
         let keen = 0.6 + 0.8 * world.npc(observer).body.alertness;
         // Timber hides a rider; open prairie shows him for miles (§7.4).
@@ -247,7 +250,26 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
                 reason: "saw it with their own eyes",
             },
             None => {
-                let v = attribution::judge(world, observer, ev.id, None);
+                // No face, but maybe a red shirt in the lantern light: the
+                // colors point at a side, and the observer picks the man of
+                // that side they'd have suspected anyway (`wardrobe`).
+                let colors = actor.and_then(|a| super::wardrobe::colors_of(world, a));
+                let rumor = match colors {
+                    Some(side) if world.rng.chance((1.5 * sight * keen * terrain).min(0.8)) => {
+                        attribution::candidates(world, observer, ev.id, None)
+                            .into_iter()
+                            .filter(|c| {
+                                matches!(c.suspect, Suspect::Person(p) if world.npc(p).faction == side)
+                            })
+                            .max_by(|a, b| a.score.total_cmp(&b.score))
+                            .map(|c| attribution::Rumor {
+                                suspect: c.suspect,
+                                strength: 1.5,
+                            })
+                    }
+                    _ => None,
+                };
+                let v = attribution::judge(world, observer, ev.id, rumor);
                 EventKind::Belief {
                     holder: observer,
                     about: ev.id,
@@ -642,9 +664,20 @@ fn wound_system(world: &mut World, ev: &WorldEvent) {
     let EventKind::Wounded { victim, .. } = ev.kind else {
         return;
     };
+    // Where it went in: the chest is the biggest mark, the head the rarest.
+    let roll = world.rng.unit();
+    let limb = match roll {
+        r if r < 0.08 => psyche::Limb::Head,
+        r if r < 0.40 => psyche::Limb::Chest,
+        r if r < 0.62 => psyche::Limb::GunArm,
+        r if r < 0.75 => psyche::Limb::OffArm,
+        _ => psyche::Limb::Leg,
+    };
     let n = world.npc_mut(victim);
     n.wounded = true;
-    n.health = (n.health - 45).max(1);
+    n.hurt = Some(limb);
+    let blow = if limb == psyche::Limb::Head { 60 } else { 45 };
+    n.health = (n.health - blow).max(1);
     n.emotions.fear += 30.0;
     n.emotions.anger += 30.0;
 }
@@ -689,6 +722,8 @@ fn cruelty_system(world: &mut World, ev: &WorldEvent) {
         Cruelty::SpoilHay => {
             world.families[family as usize].stores.work.hay *= 0.3;
         }
+        // The lice move in (`sickness`); the fear comes with the itch.
+        Cruelty::FouledBlanket => {}
     }
 }
 

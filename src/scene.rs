@@ -239,6 +239,41 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
         }
     }
 
+    // Somebody you just shot, lying there.
+    if let Some((v, act, _, day)) = &world.wardrobe.lootable
+        && *day == world.day
+        && world.action.standoff.is_none()
+    {
+        let key = format!("fallen {act}");
+        if unseen(&key, scenes) {
+            let name = world.name(*v).to_string();
+            let woman = bleeding_kansas::sim::world::is_woman(&name);
+            let dead = !world.npc(*v).alive;
+            let body = crate::panels::gendered(
+                &format!(
+                    "{name} is {} in the dirt. {} coat, {} boots, whatever's in his pockets. Anyone who sees you do it will remember it, and so will the clothes.",
+                    if dead { "dead" } else { "down and bleeding" },
+                    "His",
+                    "his"
+                ),
+                woman,
+            );
+            return Some(Moment {
+                key,
+                title: "Down".into(),
+                art: art.gunman.clone(),
+                spec: MenuSpec::new(
+                    name,
+                    body,
+                    vec![
+                        item("Go through the pockets", Cmd::Loot),
+                        item("Leave it lie", Cmd::Close),
+                    ],
+                ),
+            });
+        }
+    }
+
     // A paper with your name on it, the day word reaches you.
     if let Some(&i) = bleeding_kansas::sim::warrant::wanted(world, PLAYER).last() {
         let key = format!("paper {i}");

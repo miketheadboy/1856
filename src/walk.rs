@@ -292,6 +292,8 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
             items.extend(cmds::door_choices(world));
             items.extend(cmds::wanted_choices(world));
             items.push(item("Hands...", Cmd::Open(Sub::Hands)));
+            items.push(item("Dress...", Cmd::Open(Sub::Dress)));
+            items.push(item("The sick...", Cmd::Open(Sub::Sick)));
             items.push(item("The workbench...", Cmd::Open(Sub::Bench)));
             items.push(item("Hard times...", Cmd::Open(Sub::HardTimes)));
             items.push(item("Take stock", Cmd::Status));
@@ -368,6 +370,7 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
                 when("Cut a load of timber", Cmd::Do(Activity::CutTimber), f),
                 when("Hunt", Cmd::Choose(Choice::Hunt), f),
                 when("Walk the timber", Cmd::Do(Activity::Roam), f),
+                when("Gather bark and herbs", Cmd::GatherHerbs, f),
                 when("Camp out tonight", Cmd::Do(Activity::Camp), f),
                 back,
             ],

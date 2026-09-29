@@ -155,6 +155,38 @@ pub fn explain_npc(world: &World, id: NpcId) -> String {
         n.violence,
         n.plotting.map(|p| world.name(p).to_string())
     );
+    let _ = writeln!(
+        s,
+        "DRESS     {} (warmth {:.2}, colors {:?}){}",
+        super::wardrobe::describe(world, id),
+        n.outfit.warmth(),
+        n.outfit.colors(),
+        n.outfit
+            .looks()
+            .iter()
+            .map(|l| format!("  [{}]", l.name))
+            .collect::<String>()
+    );
+    let chronic: Vec<&str> = world
+        .sickness
+        .chronic
+        .iter()
+        .filter(|c| c.0 == id)
+        .map(|c| c.1.label())
+        .collect();
+    let scars: Vec<&str> = super::psyche::Limb::ALL
+        .iter()
+        .filter(|l| n.scars & l.bit() != 0)
+        .map(|l| l.label())
+        .collect();
+    let _ = writeln!(
+        s,
+        "BODY      sick {:?}  chronic {:?}  wound {:?}  old wounds {:?}",
+        world.sickness.sick(id).map(|c| (c.disease.label(), c.left)),
+        chronic,
+        n.hurt.map(|l| l.label()),
+        scars
+    );
     let papers = super::warrant::wanted(world, id);
     let hand = world.hands.hired.iter().find(|h| h.npc == id);
     if !papers.is_empty() || super::warrant::held(world, id) || hand.is_some() {
