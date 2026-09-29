@@ -22,6 +22,7 @@ pub const ACCUSATION_CONFIDENCE: u8 = 20;
 pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     fire_system(world, ev);
     death_system(world, ev);
+    wound_death_system(world, ev);
     perception_system(world, ev);
     grief_system(world, ev);
     gossip_system(world, ev);
@@ -150,7 +151,107 @@ fn grief_system(world: &mut World, ev: &WorldEvent) {
 }
 
 /// Who learns about a harm right away, and what they conclude (§11).
+/// The common law's year and a day: a man who dies of a wound within a year
+/// and a day of taking it was killed by whoever gave it to him. A fever or a
+/// wound gone bad takes a wounded man as a killing, linked to the shot.
+/// Returns the event to emit and what caused it.
+pub fn perished(
+    world: &World,
+    victim: NpcId,
+    cause: super::events::Hardship,
+) -> (EventKind, Option<EventId>) {
+    use super::events::Hardship;
+    use super::sickness::Disease;
+    let wound_death = match cause {
+        Hardship::Sickness(Disease::WoundFever) => true,
+        Hardship::Fever => world.npc(victim).wounded,
+        _ => false,
+    };
+    let dead = EventKind::Perished { victim, cause };
+    if !wound_death {
+        return (dead, None);
+    }
+    let since = world.day.0.saturating_sub(366);
+    let shot = world
+        .events
+        .iter()
+        .rev()
+        .take_while(|e| e.day.0 >= since)
+        .find_map(|e| match e.kind {
+            EventKind::Wounded {
+                victim: v,
+                attacker,
+            } if v == victim && attacker != victim => Some((e.id, attacker)),
+            _ => None,
+        });
+    match shot {
+        Some((wound, attacker)) => (
+            EventKind::Death {
+                victim,
+                killer: Some(attacker),
+            },
+            Some(wound),
+        ),
+        None => (dead, None),
+    }
+}
+
+/// The wound that killed him, if this death came late from a shooting: a
+/// death caused by a wound to the same man, from the same hand. (A killing
+/// *for* a wound, revenge on the shooter, has a different victim.)
+pub fn fatal_wound(world: &World, ev: &WorldEvent) -> Option<EventId> {
+    let EventKind::Death { victim, killer } = ev.kind else {
+        return None;
+    };
+    let w = ev.caused_by?;
+    match world.events[w as usize].kind {
+        EventKind::Wounded {
+            victim: v,
+            attacker,
+        } if v == victim && killer == Some(attacker) => Some(w),
+        _ => None,
+    }
+}
+
+/// He died in his bed, weeks after the shot. Nobody witnesses that: what
+/// each person believed about the shooting becomes what they believe about
+/// the killing. The shooter's own side, as often as not, says it was the
+/// fever that took him and not the ball, and the county has two stories.
+fn wound_death_system(world: &mut World, ev: &WorldEvent) {
+    let Some(wound) = fatal_wound(world, ev) else {
+        return;
+    };
+    let held: Vec<(NpcId, MemoryRef)> = world
+        .living()
+        .filter_map(|n| n.memory_of(wound).map(|m| (n.id, m.clone())))
+        .collect();
+    for (holder, m) in held {
+        let own_side = matches!(m.believed, Suspect::Person(p)
+            if world.npc(p).faction == world.npc(holder).faction);
+        let (blamed, reason) = if own_side && world.rng.chance(0.6) {
+            (Suspect::Nature, "a fever took him, not the ball")
+        } else {
+            (m.believed, "died of the wound")
+        };
+        world.emit_child(
+            ev,
+            EventKind::Belief {
+                holder,
+                about: ev.id,
+                blamed,
+                confidence: m.confidence,
+                source: m.source,
+                reason,
+            },
+        );
+    }
+}
+
 fn perception_system(world: &mut World, ev: &WorldEvent) {
+    // A death in bed from an old wound has no witnesses of its own.
+    if fatal_wound(world, ev).is_some() {
+        return;
+    }
     let (victim, actor, is_death) = match ev.kind {
         EventKind::Fire { owner, cause, .. } => (
             owner,

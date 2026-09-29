@@ -11,6 +11,9 @@ use super::events::{EventKind, WorldEvent};
 use super::psyche::LifeStage;
 use super::world::{Faction, FamilyId, NpcId, PLAYER, World, is_woman};
 
+/// Chance a captain keeps a dead man's name on the roll.
+const PAD_ODDS: f32 = 0.5;
+
 /// Days a musterer is gone.
 pub const SERVICE_DAYS: u32 = 10;
 /// Days to answer a muster call before you're counted a shirker.
@@ -125,6 +128,8 @@ pub struct Law {
     pub muster: Option<(usize, Day, Vec<NpcId>)>,
     /// The player answered the current call (joined or refused openly).
     pub player_answered: bool,
+    /// Dead men kept on the open roll (`RollPadded`).
+    pub padded: Vec<NpcId>,
 }
 
 impl Law {
@@ -227,10 +232,32 @@ pub fn sue(world: &mut World, plaintiff: NpcId, defendant: NpcId, letters: f32) 
 pub fn on_event(world: &mut World, ev: &WorldEvent) {
     match ev.kind {
         EventKind::Election { .. } | EventKind::VoteSold { .. } => on_election(world, ev),
-        // The dead come off the muster roll the day they die.
+        // The dead can't ride: they come off the list of men the day they
+        // die. Whether they come off the *roll* is up to the captain.
         EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => {
-            if let Some((_, _, men)) = &mut world.law.muster {
-                men.retain(|&m| m != victim);
+            let Some((i, _, men)) = &mut world.law.muster else {
+                return;
+            };
+            let i = *i as u8;
+            if !men.contains(&victim) {
+                return;
+            }
+            men.retain(|&m| m != victim);
+            if world.rng.chance(PAD_ODDS) {
+                world.emit_child(
+                    ev,
+                    EventKind::RollPadded {
+                        name: victim,
+                        index: i,
+                    },
+                );
+            }
+        }
+        // Names kept while the call is open; at the close the captain
+        // counts his own.
+        EventKind::RollPadded { name, .. } if world.law.muster.is_some() => {
+            if !world.law.padded.contains(&name) {
+                world.law.padded.push(name);
             }
         }
         EventKind::ClaimJumped {
@@ -493,6 +520,43 @@ fn close_muster(world: &mut World, i: usize) {
         return;
     };
     let c = &MUSTERS[i];
+    // The captain fills out the roll with the year's dead of his side: a
+    // name is a man's pay and rations, and a company that looks stronger.
+    let side_called = |f: Faction| match f {
+        Faction::FreeState => c.free_state,
+        Faction::ProSlavery => c.pro_slavery,
+    };
+    let since = world.day.0.saturating_sub(365);
+    let lately_dead: Vec<NpcId> = world
+        .events
+        .iter()
+        .rev()
+        .take_while(|e| e.day.0 >= since)
+        .filter_map(|e| match e.kind {
+            EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => Some(victim),
+            _ => None,
+        })
+        .filter(|&v| {
+            v != PLAYER
+                && side_called(world.npc(v).faction)
+                && !is_woman(&world.npc(v).name)
+                && world.npc(v).age >= 18
+                && !world.law.padded.contains(&v)
+        })
+        .collect();
+    let mut padded = std::mem::take(&mut world.law.padded).len() as u8;
+    for v in lately_dead {
+        if world.rng.chance(0.15) {
+            world.emit_root(
+                EventKind::RollPadded {
+                    name: v,
+                    index: i as u8,
+                },
+                None,
+            );
+            padded += 1;
+        }
+    }
     let called = |world: &World, id: NpcId| match world.npc(id).faction {
         Faction::FreeState => c.free_state,
         Faction::ProSlavery => c.pro_slavery,
@@ -555,6 +619,7 @@ fn close_muster(world: &mut World, i: usize) {
             dodged: dodgers.len() as u8,
             wounded,
             you: joined.contains(&PLAYER),
+            padded,
         },
         None,
     );

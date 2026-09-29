@@ -531,13 +531,9 @@ fn progress(world: &mut World) {
         world.npcs[c.who as usize].health -= drain;
         if world.rng.chance(p.min(0.5)) {
             world.sickness.cases.remove(i);
-            world.emit_root(
-                EventKind::Perished {
-                    victim: c.who,
-                    cause: Hardship::Sickness(c.disease),
-                },
-                None,
-            );
+            let cause = Hardship::Sickness(c.disease);
+            let (kind, why) = super::systems::perished(world, c.who, cause);
+            world.emit_root(kind, why);
             continue;
         }
         if c.left <= 1 {

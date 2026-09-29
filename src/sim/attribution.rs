@@ -113,6 +113,16 @@ pub fn candidates(
         });
     }
 
+    // A late death from an old wound: some say the fever took him.
+    if super::systems::fatal_wound(world, ev).is_some() {
+        out.push(Candidate {
+            suspect: Suspect::Nature,
+            score: 5.0 + rumor_for(Suspect::Nature),
+            reason: "a fever took him, not the ball",
+            parts: vec![("fever", 5.0)],
+        });
+    }
+
     match ev.kind {
         // A good fence makes the owner more suspicious, not less.
         EventKind::Strayed { .. } => {

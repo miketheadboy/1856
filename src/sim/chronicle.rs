@@ -87,6 +87,14 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Some(k) if omniscient || k == PLAYER => format!(" by {}", who(world, k)),
                 _ => String::new(),
             };
+            if super::systems::fatal_wound(world, ev).is_some() {
+                let whose = if victim == PLAYER {
+                    "You".to_string()
+                } else {
+                    who(world, victim)
+                };
+                return format!("[DEATH] {whose} died of the wound, a fever in it{by}");
+            }
             if victim == PLAYER {
                 format!("[DEATH] You were killed{}", by)
             } else {
@@ -689,17 +697,38 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             joined,
             dodged,
             wounded,
+            padded,
             ..
         } => format!(
-            "[MUSTER] {}: {} rode out, {} stayed home{}",
+            "[MUSTER] {}: {} on the roll, {} stayed home{}{}",
             super::law::MUSTERS[index as usize].name,
-            joined,
+            joined as u16 + padded as u16,
             dodged,
             if wounded > 0 {
                 format!(", {wounded} came back shot")
             } else {
                 String::new()
+            },
+            if omniscient && padded > 0 {
+                format!(" [truth: {joined} rode; {padded} of the names were dead men]")
+            } else {
+                String::new()
             }
+        ),
+        EventKind::Bigamy { bigamist, spouse } => format!(
+            "[SCANDAL] A letter from the States: {} has a living {} back home. The marriage to {} is undone",
+            who(world, bigamist),
+            if super::world::is_woman(&world.npc(bigamist).name) {
+                "husband"
+            } else {
+                "wife"
+            },
+            who(world, spouse)
+        ),
+        EventKind::RollPadded { name, index } => format!(
+            "[MUSTER] The {} roll carries the name of {}, who is dead",
+            super::law::MUSTERS[index as usize].name,
+            who(world, name)
         ),
         EventKind::BeeHeld { bee, host, crowd } => format!(
             "[NEIGHBORS] {} came to the {} {}",
@@ -1353,6 +1382,8 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
         EventKind::Prowler { seen, .. } => omniscient || seen > 0,
         EventKind::ArmsArrived { family, .. } => omniscient || family == 0,
         EventKind::HandTalked { .. } => omniscient,
+        // The captain's secret, until the roll is read.
+        EventKind::RollPadded { .. } => omniscient,
         // Sickness in the county is known house by house, and loudly when
         // it kills; the chronicle keeps to your house and the dead.
         EventKind::FellSick { who: w, .. } | EventKind::Recovered { who: w, .. } => {

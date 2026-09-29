@@ -425,11 +425,29 @@ pub enum EventKind {
     /// A muster closes: who went, who stayed home, who came back hurt.
     Muster {
         index: u8,
+        /// Men who rode.
         joined: u8,
         dodged: u8,
         wounded: u8,
         /// The player rode.
         you: bool,
+        /// Dead men's names on the roll: the roll the county sees is
+        /// `joined + padded`.
+        padded: u8,
+    },
+    /// A letter from back home: the bigamist's first spouse is alive. The
+    /// marriage here is undone.
+    Bigamy {
+        bigamist: NpcId,
+        spouse: NpcId,
+    },
+    /// A captain kept a dead man's name on the muster roll: his pay and
+    /// rations, and a stronger company on paper (the rolls of 1855–56 were
+    /// padded; the 1857 Oxford returns were copied out of a Cincinnati
+    /// directory). Known only to the captain until someone reads the roll.
+    RollPadded {
+        name: NpcId,
+        index: u8,
     },
     /// A paper writes you up.
     Notice {

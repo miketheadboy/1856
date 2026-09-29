@@ -41,9 +41,21 @@ fn mail_runs(world: &World) -> bool {
 }
 
 /// Mail day is Wednesday, when the Westport hack came in.
+/// Chance a grown newcomer left a living spouse in the States.
+const BACK_EAST: f32 = 0.2;
+/// Weekly chance, per bigamous marriage, that the letter comes.
+const FOUND_OUT: f32 = 0.06;
+
 pub fn daily(world: &mut World) {
     if !world.day.0.is_multiple_of(7) || !mail_runs(world) {
         return;
+    }
+    // The first wife writes, or her brother does.
+    let lies = world.hearts.bigamous.clone();
+    for (bigamist, spouse, _, _) in lies {
+        if world.npc(bigamist).alive && world.npc(spouse).alive && world.rng.chance(FOUND_OUT) {
+            world.emit_root(EventKind::Bigamy { bigamist, spouse }, None);
+        }
     }
     for f in 0..world.families.len() {
         let family = f as FamilyId;
@@ -171,6 +183,11 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             let first = NEWCOMERS[world.rng.range(0, NEWCOMERS.len() as u32) as usize];
             let age = 17 + world.rng.range(0, 25) as u8;
             let id = world.add_npc(family, first, age);
+            // Some came west to leave a marriage behind (desertion was the
+            // poor man's divorce).
+            if age >= 20 && world.rng.chance(BACK_EAST) {
+                world.hearts.back_east.push(id);
+            }
             if let EventKind::KinArrived { newcomer, .. } = &mut world.events[ev.id as usize].kind {
                 *newcomer = Some(id);
             }

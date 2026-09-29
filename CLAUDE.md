@@ -145,7 +145,12 @@ libxkbcommon-x11-0` to run it headless for screenshots. Set
    upon, legalistic, neutral in the slavery fight, not raiders.
 6. **Observable.** Anything new should show up in `debug::explain_*`, the
    chronicle, or `lab`. If emergence can't be told from a bug, add a lens.
-7. **The books agree.** Anything that holds a person (a list of the sick,
+7. **The books agree, and lie only on purpose.** A record the county keeps
+   may be false (a padded muster roll, a bigamous marriage, a bedside death
+   written up as murder, or as fever), but every such lie is an event
+   (`RollPadded`, `Bigamy`, a `Death` caused by its `Wounded`) and
+   `audit::lies` checks each against the truth. A lie with no event behind
+   it is a bug. Anything that holds a person (a list of the sick,
    the hired, the jailed, the wanted) handles `Death`/`Perished` the day
    it happens. New cross-system facts get a rule in `audit::check`; run
    `lab audit` after any change that touches two systems.
@@ -161,9 +166,9 @@ measurably worse than mild ones by August 1856. Known open issues: faction
 grievance still peaks above 100 in winter 1855–56 (saturates the UI bars and
 trips the Westport blockade early); fires run ~30 per two years (Phase D's
 watches brought them down from ~34); the justice's papers land on the wrong
-man ~85% of the time, because the county's blame does (`headless --survey`
-prints it), and there are only ~2.6 a seed now that a woman's or an
-unlettered man's oath weighs less.
+man ~90% of the time, because the county's blame does (`headless --survey`
+prints it). There are ~5.6 papers a seed: a woman's or an unlettered man's
+oath weighs less, but a death from an old wound is now a murder.
 
 Realism anchors (tests hold them; the lab measures them):
 

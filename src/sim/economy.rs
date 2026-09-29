@@ -177,7 +177,8 @@ pub fn daily(world: &mut World) {
                 } else {
                     Hardship::Fever
                 };
-                world.emit_root(EventKind::Perished { victim: p, cause }, None);
+                let (kind, why) = super::systems::perished(world, p, cause);
+                world.emit_root(kind, why);
             }
         }
     }

@@ -469,6 +469,7 @@ fn witnesses_are_sure_and_often_wrong() {
                 blamed,
                 confidence,
                 source: Source::Witnessed,
+                reason: "saw it with their own eyes",
                 ..
             } = e.kind
             else {
@@ -586,4 +587,137 @@ fn stories_sharpen_but_mostly_hold() {
         (sharpened as f32) < 0.2 * tellings as f32,
         "{sharpened} of {tellings} tellings sharpened"
     );
+}
+
+// ---- the lies the county tells on purpose ---------------------------------
+
+/// Year and a day: a wounded man who dies of the fever in it was killed by
+/// the man who shot him. Those who blamed someone for the shooting carry it
+/// to the killing; his own side may say it was the fever.
+#[test]
+fn a_wound_that_kills_later_is_a_killing() {
+    use super::events::{Hardship, Source};
+    use super::sickness::Disease;
+    use super::world::MemoryRef;
+    let mut w = World::new(4);
+    let victim = first_of_family(&w, 2);
+    let shooter = first_of_family(&w, 3);
+    let wound = w.emit_root(
+        EventKind::Wounded {
+            victim,
+            attacker: shooter,
+        },
+        None,
+    );
+    w.run_cascades();
+    let kin = w
+        .living()
+        .find(|n| n.family == w.npc(victim).family && n.id != victim)
+        .unwrap()
+        .id;
+    let today = w.day;
+    w.npc_mut(kin).remember(MemoryRef {
+        event: wound,
+        believed: Suspect::Person(shooter),
+        confidence: 90,
+        source: Source::Victim,
+        day: today,
+        weight: 200,
+    });
+    w.run_days(10);
+    let (kind, why) = super::systems::perished(&w, victim, Hardship::Sickness(Disease::WoundFever));
+    assert_eq!(
+        kind,
+        EventKind::Death {
+            victim,
+            killer: Some(shooter)
+        }
+    );
+    assert_eq!(why, Some(wound));
+    let death = w.emit_root(kind, why);
+    w.run_cascades();
+    assert!(!w.npc(victim).alive);
+    assert_eq!(
+        w.npc(kin).memory_of(death).map(|m| m.believed),
+        Some(Suspect::Person(shooter)),
+        "his people know who killed him"
+    );
+    assert!(
+        !w.events.iter().any(|e| matches!(e.kind,
+            EventKind::Belief { about, reason: "saw it with their own eyes", .. } if about == death)),
+        "nobody watched him die of it"
+    );
+    // Hunger isn't a wound's doing.
+    let other = first_of_family(&w, 4);
+    let (k, _) = super::systems::perished(&w, other, Hardship::Hunger);
+    assert!(matches!(k, EventKind::Perished { .. }));
+}
+
+/// A dead man on the roll: kept on purpose, with an event for it; never
+/// among the men who ride.
+#[test]
+fn the_dead_are_carried_on_the_rolls_but_never_ride() {
+    let mut padded = 0;
+    for seed in 1..=12 {
+        let mut w = World::new(seed);
+        for _ in 0..730 {
+            w.advance_day();
+            if let Some((_, _, men)) = &w.law.muster {
+                assert!(men.iter().all(|&m| w.npc(m).alive), "a dead man rode");
+            }
+        }
+        for e in &w.events {
+            if let EventKind::RollPadded { name, .. } = e.kind {
+                padded += 1;
+                assert!(
+                    w.death_of(name).is_some_and(|d| d < e.id),
+                    "padded a living man"
+                );
+            }
+        }
+    }
+    assert!(padded > 0, "no captain ever padded a roll");
+}
+
+/// A newcomer with a wife back in the States marries here; the letter comes;
+/// the marriage is undone and the bride goes home to her people.
+#[test]
+fn a_letter_from_the_states_undoes_a_bigamous_marriage() {
+    use super::romance::married_to;
+    let mut w = World::new(9);
+    let liar = w.add_npc(2, "Silas", 30);
+    w.hearts.back_east.push(liar);
+    let bride = w
+        .living()
+        .find(|n| {
+            n.family != 2
+                && n.family != 0
+                && super::world::is_woman(&n.name)
+                && (18..40).contains(&n.age)
+                && married_to(&w, n.id).is_none()
+        })
+        .map(|n| n.id);
+    let bride = match bride {
+        Some(b) => b,
+        None => w.add_npc(4, "Ruth", 22),
+    };
+    let home = w.npc(bride).family;
+    w.emit_root(EventKind::Marriage { a: liar, b: bride }, None);
+    w.run_cascades();
+    assert_eq!(married_to(&w, liar), Some(bride));
+    assert_eq!(w.hearts.bigamous.len(), 1);
+    assert!(super::audit::check(&w).is_empty());
+    w.emit_root(
+        EventKind::Bigamy {
+            bigamist: liar,
+            spouse: bride,
+        },
+        None,
+    );
+    w.run_cascades();
+    assert_eq!(married_to(&w, liar), None);
+    assert_eq!(w.npc(bride).family, home, "she went home");
+    assert!(w.opinion(bride, liar) < -50);
+    assert!(w.hearts.bigamous.is_empty());
+    assert!(super::audit::check(&w).is_empty());
 }

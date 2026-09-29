@@ -86,6 +86,7 @@ pub fn check(world: &World) -> Vec<Breach> {
     law(&mut b);
     railroad(&mut b);
     gossip(&mut b);
+    lies(&mut b);
     b.out
 }
 
@@ -697,6 +698,70 @@ fn gossip(b: &mut Books) {
                     b.who(teller),
                     b.who(listener)
                 ),
+            );
+        }
+    }
+}
+
+/// The county's records may lie, but only on purpose, and every lie leaves
+/// an event behind it. A padded roll names only the dead, each by a
+/// `RollPadded`; a bigamous marriage is a real marriage until the letter
+/// comes; a death from an old wound names the man who gave the wound, and
+/// nobody saw it happen.
+fn lies(b: &mut Books) {
+    let w = b.world;
+    for &name in &w.law.padded {
+        if !b.exists("padded", name) {
+            continue;
+        }
+        if w.npc(name).alive {
+            b.breach(
+                "padded-living",
+                format!("{} padded onto the roll alive", b.who(name)),
+            );
+        }
+        let evented = w
+            .events
+            .iter()
+            .rev()
+            .any(|e| matches!(e.kind, EventKind::RollPadded { name: n, .. } if n == name));
+        if !evented {
+            b.breach(
+                "padded-silent",
+                format!("{} on the roll with no RollPadded", b.who(name)),
+            );
+        }
+    }
+    for &(liar, here, _, _) in &w.hearts.bigamous {
+        if !b.exists("bigamy", liar) || !b.exists("bigamy", here) {
+            continue;
+        }
+        let wed = w
+            .hearts
+            .couples
+            .iter()
+            .any(|&(x, y)| (x, y) == (liar.min(here), liar.max(here)));
+        if !wed {
+            b.breach(
+                "bigamy-unwed",
+                format!("{} a bigamist with no wedding", b.who(liar)),
+            );
+        }
+    }
+    // Nobody watches a man die of a fever in his bed.
+    for e in w.events.iter().rev().take_while(|e| e.day == w.day) {
+        // (Those who saw the shooting carry their sight over; nobody sees
+        // the death itself.)
+        if let EventKind::Belief {
+            about,
+            reason: "saw it with their own eyes",
+            ..
+        } = e.kind
+            && super::systems::fatal_wound(w, &w.events[about as usize]).is_some()
+        {
+            b.breach(
+                "wound-witnessed",
+                format!("#{} saw a bedside death happen", e.id),
             );
         }
     }

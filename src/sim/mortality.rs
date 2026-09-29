@@ -5,7 +5,7 @@
 //! The named killers (measles, whooping cough, diphtheria, the flux) live
 //! in `sickness`; this is the rest: croup, teething fevers, the nameless.
 
-use super::events::{EventKind, Hardship};
+use super::events::Hardship;
 use super::psyche::LifeStage;
 use super::world::{NpcId, World};
 
@@ -60,13 +60,8 @@ pub fn daily(world: &mut World) {
     for c in children {
         let p = daily_risk(world, c);
         if world.rng.chance(p) {
-            world.emit_root(
-                EventKind::Perished {
-                    victim: c,
-                    cause: Hardship::Fever,
-                },
-                None,
-            );
+            let (kind, why) = super::systems::perished(world, c, Hardship::Fever);
+            world.emit_root(kind, why);
         }
     }
 }
@@ -115,7 +110,7 @@ mod tests {
                 .iter()
                 .filter(|&&c| {
                     w.events.iter().any(
-                        |e| matches!(e.kind, EventKind::Perished { victim, .. } if victim == c),
+                        |e| matches!(e.kind, crate::sim::EventKind::Perished { victim, .. } if victim == c),
                     )
                 })
                 .count();
