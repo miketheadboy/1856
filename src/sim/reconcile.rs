@@ -230,6 +230,9 @@ fn condolences(world: &mut World, ev: &WorldEvent, child: NpcId) {
             _ => None,
         })
         .collect();
+    // A HashSet has no order; the dice need one (CLAUDE.md rule 4).
+    let mut enemies = enemies;
+    enemies.sort_unstable();
     for e in enemies {
         let Some(visitor) = world.head_of(e) else {
             continue;
@@ -312,7 +315,8 @@ pub fn monthly(world: &mut World) {
     // Feuds nobody feeds starve.
     if today >= QUIET_DAYS {
         let bled = blood_since(world, Day(today - QUIET_DAYS));
-        let feuds: Vec<_> = world.feuds.iter().copied().collect();
+        let mut feuds: Vec<_> = world.feuds.iter().copied().collect();
+        feuds.sort_unstable();
         for (a, b) in feuds {
             let quiet = !bled
                 .iter()
@@ -324,7 +328,8 @@ pub fn monthly(world: &mut World) {
     }
 
     // The enemy of my enemy.
-    let feuds: Vec<_> = world.feuds.iter().copied().collect();
+    let mut feuds: Vec<_> = world.feuds.iter().copied().collect();
+    feuds.sort_unstable();
     let enemies = |f: FamilyId| -> Vec<FamilyId> {
         feuds
             .iter()

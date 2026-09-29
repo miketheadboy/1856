@@ -510,7 +510,7 @@ fn progress(world: &mut World) {
         let (_, _, risk, child, immune) = c.disease.profile();
         let stage = LifeStage::of(n.age);
         let age = match stage {
-            LifeStage::Child => 0.7 * child * if n.age < 3 { 1.8 } else { 1.0 },
+            LifeStage::Child => 0.5 * child * if n.age < 3 { 1.8 } else { 1.0 },
             LifeStage::Elder => 1.8,
             LifeStage::Adult => 1.0,
         };

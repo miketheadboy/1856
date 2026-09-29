@@ -12,10 +12,10 @@ use super::world::{NpcId, World};
 /// Annual risk of dying of sickness, by age.
 pub fn annual_risk(age: u8) -> f32 {
     match age {
-        0 => 0.07,
-        1..=4 => 0.02,
-        5..=9 => 0.005,
-        _ => 0.002,
+        0 => 0.05,
+        1..=4 => 0.012,
+        5..=9 => 0.003,
+        _ => 0.0015,
     }
 }
 

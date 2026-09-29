@@ -19,6 +19,7 @@ mod county;
 mod duel;
 mod panels;
 mod raid;
+mod rig;
 mod scene;
 mod scenery;
 mod town;
@@ -159,6 +160,7 @@ fn main() {
         .init_resource::<walk::Bounds>()
         .init_resource::<county::CountyView>()
         .init_resource::<duel::Game>()
+        .init_resource::<rig::Motion>()
         .init_resource::<raid::Raid>()
         .insert_resource(scenes)
         .add_systems(
@@ -195,6 +197,7 @@ fn main() {
                 scene::run,
                 duel::play,
                 duel::draw,
+                duel::figure,
             )
                 .chain(),
         )

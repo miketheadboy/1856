@@ -27,6 +27,9 @@ src/main.rs      Bevy view: app wiring, screens (County, Claim, Town). No rules 
   scene.rs       letterboxed moments: the knock, the petition, the muster, riders at the gate...
   duel.rs        standoffs by hand (talk down, stare down, quick-draw and aim), the road ambush, the bench
                  (the posse at your gate plays the same standoff)
+  rig.rs         cut-out rigs: a skeleton of parts, two-bone reach (rifle arm to its target,
+                 the other hand on the barrel, knees over planted feet), knock-back springs,
+                 the fall; clothes off the outfit, old wounds in the pose
   raid.rs        a neighbor's place at night: lantern cones, a dog, crawl, hold E to do it
   ui.rs          blue command windows, toast, top bar, status (Tab), paper (N)
   panels.rs      text readouts; scenery.rs map art, seasons, weather, night
@@ -68,6 +71,8 @@ Sim modules (`src/sim/`):
 | `arms` | Phase C: each house's armory (Sharps "books" from the East, old guns, lead, balls, cartridges, rails) and where it's hid; the bench (cast, roll, split); Wednesday crates the river towns may seize; the sheriff's posse searching Free-State houses after its musters |
 | `hands` | Phase D: kin and hired hands set to the fields, the stock, the timber or the night watch; a watch turns riders back at the fence (neighbors in a feud post one too); hands by the month from hungry households, wages to their people, the unpaid walk and the sour talk (the other side learns where the guns are); partisan companies (Kickapoo Rangers, Buford's, the Stubbs, Lane's) rented to sit on your place or ride on a neighbor's, and the other side's paper printing who paid |
 | `warrant` | Phase D: the justice writes papers on what people swear to (eyes, losses, a neighbor's word; never the paper), slow on his own side; posses and bounty hunters; men come in, run, or fight; trials at Lecompton; you can give yourself up, lie low, light out for the States, meet them at the gate, or take a paper yourself (paid on delivery, half for a body). Violence only: no paper on a freedom seeker |
+| `sickness` | ague in the bottoms, cholera up the river, typhoid from a fouled well, the flux, measles, whooping cough, diphtheria, smallpox, typhus from lice, consumption, scurvy, lung fever, wounds gone bad; spread by house, school and neighbor; quinine works, the doctor's calomel and lancet don't; herbs (physic skill), nursing, quarantine, boiling the bedding; a lousy blanket as a dark verb |
+| `wardrobe` | 40 pieces with warmth, skill bonuses, nerve, draw, aim, stealth, charm and side colors; a look per path with a set bonus; colors are what a faceless witness sees; loot from the fallen and from trunks, and taken clothes that their owners' kin recognize |
 | `intrigue` | the player's dark verbs: secrets learned at the groggery or by moonlight, blackmail, exposure, sabotage (shoot a cow, foul a well, cut a fence, wet the hay) read through attribution, slander |
 | `railroad` | the Underground Railroad (MVP §25): freedom seekers who pick doors by word and travel in the dark of the moon; families answer by private belief (hide, turn away, turn in for the reward); food as evidence; pursuers who linger and ask; captures read by attribution; harboring charged under the 1855 slave code |
 | `legacy` | the papers write you up (readers take the paper's view of you); a scandal shuts the store's book; your children drift toward your path and, near grown, take after you or rebel |
@@ -99,6 +104,8 @@ cargo run --bin lab --no-default-features -- standoff --seeds 40
 cargo run --bin lab --no-default-features -- arms --days 330
 cargo run --bin lab --no-default-features -- law --days 730
 cargo run --bin lab --no-default-features -- hands --seeds 10 --days 540
+cargo run --bin lab --no-default-features -- sick --seeds 20 --days 730
+cargo run --bin lab --no-default-features -- dress
 cargo run --bin headless --no-default-features -- --seed 15 --truth
 cargo run --bin headless --no-default-features -- --survey 30 --days 730
 

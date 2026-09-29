@@ -272,3 +272,17 @@ fn a_harsh_winter_sours_the_summer() {
         "mild {mild}, harsh {harsh}"
     );
 }
+/// HashSet and HashMap iterate in a different order every process; a
+/// feud set walked in that order once made two runs of one seed part ways
+/// at a child's grave. Two long runs must match exactly.
+#[test]
+fn same_seed_same_history_over_years() {
+    for seed in [2, 8] {
+        let run = || {
+            let mut w = World::new(seed);
+            w.run_days(500);
+            (w.events.len(), w.rng.unit())
+        };
+        assert_eq!(run(), run(), "seed {seed}");
+    }
+}
