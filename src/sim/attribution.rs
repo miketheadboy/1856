@@ -232,7 +232,21 @@ pub fn candidates(
         } else {
             0.0
         };
-        let capability = 5.0;
+        // Who "could have": a woman is seldom thought to fire a barn or lie
+        // in wait, the same prejudice that discounts her word.
+        let violent = is_fire
+            || matches!(
+                ev.kind,
+                EventKind::Death { .. } | EventKind::Wounded { .. } | EventKind::ShotAt { .. }
+            );
+        let capability = if violent && super::world::is_woman(&person.name) {
+            -15.0
+        } else {
+            5.0
+        };
+        // The usual suspects: the poor, the new, the jailbird, the man with
+        // the other side all round him. Nobody vouches for them (`standing`).
+        let no_account = 30.0 * (1.0 - super::standing::repute(world, p)).max(0.0);
         let priors = world
             .npc(observer)
             .memories
@@ -248,9 +262,16 @@ pub fn candidates(
         };
         let rumor_boost = rumor_for(Suspect::Person(p));
 
-        let score =
-            -25.0 + hostility + proximity + motive + hunger + capability + pattern + rumor_boost
-                - alibi;
+        let score = -25.0
+            + hostility
+            + proximity
+            + motive
+            + hunger
+            + capability
+            + no_account
+            + pattern
+            + rumor_boost
+            - alibi;
 
         let reasons = [
             (hostility, "bad blood between them"),
@@ -259,6 +280,7 @@ pub fn candidates(
             (pattern, "has done it before"),
             (rumor_boost, "everybody says so"),
             (hunger, "their family is starving"),
+            (no_account, "no account, and nobody to vouch for them"),
         ];
         let reason = reasons
             .iter()
@@ -277,6 +299,7 @@ pub fn candidates(
                 ("motive", motive),
                 ("hunger", hunger),
                 ("capability", capability),
+                ("no account", no_account),
                 ("pattern", pattern),
                 ("rumor", rumor_boost),
                 ("alibi", -alibi),

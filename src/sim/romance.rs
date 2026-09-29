@@ -84,9 +84,33 @@ impl Hearts {
     }
 }
 
-/// A living spouse, if any.
+/// A living spouse, if any. Walks every marriage on record: a widower's
+/// first wife, dead, must not hide his second (the auditor caught Elias Pike
+/// marrying a third time on the strength of a grave).
 pub fn married_to(world: &World, id: NpcId) -> Option<NpcId> {
-    world.hearts.spouse_of(id).filter(|&s| world.npc(s).alive)
+    world.hearts.couples.iter().find_map(|&(a, b)| {
+        let other = if a == id {
+            b
+        } else if b == id {
+            a
+        } else {
+            return None;
+        };
+        world.npc(other).alive.then_some(other)
+    })
+}
+
+/// Every spouse ever, living or dead.
+pub fn spouses(world: &World, id: NpcId) -> impl Iterator<Item = NpcId> + '_ {
+    world.hearts.couples.iter().filter_map(move |&(a, b)| {
+        if a == id {
+            Some(b)
+        } else if b == id {
+            Some(a)
+        } else {
+            None
+        }
+    })
 }
 
 /// How much a person resists a suitor: faith, honesty, and a living spouse.

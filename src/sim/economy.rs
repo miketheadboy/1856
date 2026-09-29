@@ -16,7 +16,7 @@ pub const SEED_FOOD: f32 = 12.0;
 const COW_FOOD: f32 = 90.0;
 const OX_FOOD: f32 = 160.0;
 /// Most the store will lend before it stops extending credit.
-const CREDIT_LIMIT: i32 = 60;
+pub const CREDIT_LIMIT: i32 = 60;
 /// Days a family waits between desperate choices.
 const DECISION_COOLDOWN: u32 = 5;
 /// Start deciding when stores fall below this many days of eating.
@@ -378,6 +378,12 @@ pub fn act(world: &mut World, family: FamilyId, choice: Choice) -> bool {
             if super::legacy::credit_cut(world, family) {
                 return false;
             }
+            // The store lends on a name: a widow's, a newcomer's, a
+            // jailbird's is good for less.
+            let name = world
+                .head_of(family)
+                .map_or(1.0, |h| super::standing::word(world, h));
+            let limit = (limit as f32 * (0.4 + 0.6 * name.min(1.0))) as i32;
             let hh = &mut world.families[f].stores;
             if hh.debt >= limit {
                 return false;

@@ -106,6 +106,9 @@ pub struct Npc {
     pub hurt: Option<super::psyche::Limb>,
     /// Old wounds that healed crooked, as `Limb::bit` flags.
     pub scars: u8,
+    /// Day they came into the county; None for those here at the start.
+    /// New faces have no one to vouch for them (`standing`).
+    pub arrived: Option<Day>,
 }
 
 impl Npc {
@@ -445,6 +448,7 @@ impl World {
             outfit: Default::default(),
             hurt: None,
             scars: 0,
+            arrived: None,
         }];
         let mut given: Vec<&str> = GIVEN_NAMES.to_vec();
         for family in families.iter() {
@@ -500,6 +504,7 @@ impl World {
                     outfit: Default::default(),
                     hurt: None,
                     scars: 0,
+                    arrived: None,
                 });
             }
         }
@@ -627,6 +632,7 @@ impl World {
             outfit: Default::default(),
             hurt: None,
             scars: 0,
+            arrived: Some(self.day),
         });
         self.npcs[id as usize].outfit = super::wardrobe::dress(self, id);
         id
@@ -756,6 +762,15 @@ impl World {
         caused_by: Option<EventId>,
         cascade_depth: u8,
     ) -> EventId {
+        // A man dies once. Two systems can each kill him in the same tick
+        // (a fever and the wound it came from) before either death lands;
+        // the second is the first (the auditor caught Samuel Reed dying of
+        // both on one February day).
+        if let EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } = kind
+            && let Some(first) = self.death_of(victim)
+        {
+            return first;
+        }
         let id = self.events.len() as EventId;
         self.events.push(WorldEvent {
             id,
@@ -767,6 +782,21 @@ impl World {
         });
         self.pending.push_back(id);
         id
+    }
+
+    /// The event that killed this person, if one is in the log.
+    pub fn death_of(&self, victim: NpcId) -> Option<EventId> {
+        let alive = self.npcs.get(victim as usize).is_some_and(|n| n.alive);
+        // The living can only have a death queued today; the dead, any day.
+        let today = self.day;
+        self.events
+            .iter()
+            .rev()
+            .take_while(|e| !alive || e.day == today)
+            .find(|e| {
+                matches!(e.kind, EventKind::Death { victim: v, .. } | EventKind::Perished { victim: v, .. } if v == victim)
+            })
+            .map(|e| e.id)
     }
 
     /// Start a new chain. `caused_by` links it to whatever set it in motion

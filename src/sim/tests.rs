@@ -451,3 +451,139 @@ fn gossip_against_attribution() {
         "talk across the line: {across}/{tellings}"
     );
 }
+
+/// Eyewitnesses (Wells & Loftus): at night, afraid, with a gun going off,
+/// a witness is often wrong, and no less sure for it. When wrong, the name
+/// is a man of the same side they'd have suspected anyway.
+#[test]
+fn witnesses_are_sure_and_often_wrong() {
+    use super::events::Source;
+    let (mut seen, mut right, mut wrong_sure) = (0u32, 0u32, 0u32);
+    let mut same_side = 0u32;
+    for seed in 1..=8 {
+        let mut w = World::new(seed);
+        w.run_days(450);
+        for e in &w.events {
+            let EventKind::Belief {
+                about,
+                blamed,
+                confidence,
+                source: Source::Witnessed,
+                ..
+            } = e.kind
+            else {
+                continue;
+            };
+            let truth = match w.events[about as usize].kind {
+                EventKind::Fire {
+                    cause: FireCause::Arson(a),
+                    ..
+                } => a,
+                EventKind::Death {
+                    killer: Some(k), ..
+                } => k,
+                EventKind::Wounded { attacker, .. } => attacker,
+                EventKind::ShotAt { shooter, .. } => shooter,
+                EventKind::Theft { thief, .. } => thief,
+                _ => continue,
+            };
+            seen += 1;
+            if blamed == Suspect::Person(truth) {
+                right += 1;
+            } else if let Suspect::Person(x) = blamed {
+                wrong_sure += (confidence >= 85) as u32;
+                same_side += (w.npc(x).faction == w.npc(truth).faction) as u32;
+            }
+        }
+    }
+    let wrong = seen - right;
+    assert!(seen >= 20, "{seen} witnesses");
+    let rate = right as f32 / seen as f32;
+    assert!((0.4..0.9).contains(&rate), "right {right}/{seen}");
+    assert_eq!(wrong_sure, wrong, "the wrong are as sure as the right");
+    assert_eq!(same_side, wrong, "a wrong face is one of the same side");
+}
+
+/// Allport & Postman: rumor goes as importance times ambiguity. A killing
+/// the county can't agree on outruns a theft everyone pins on one man.
+#[test]
+fn rumor_runs_on_importance_and_ambiguity() {
+    use super::events::Source;
+    use super::systems::talkability;
+    use super::world::MemoryRef;
+    let mut w = World::new(6);
+    let (a, b) = (first_of_family(&w, 1), first_of_family(&w, 2));
+    let (c, d) = (first_of_family(&w, 3), first_of_family(&w, 4));
+    let killing = w.emit_root(
+        EventKind::Death {
+            victim: a,
+            killer: Some(b),
+        },
+        None,
+    );
+    let theft = w.emit_root(
+        EventKind::Theft {
+            thief: c,
+            victim: d,
+            loot: super::events::Loot::Grain,
+        },
+        None,
+    );
+    let people: Vec<NpcId> = w.living().map(|n| n.id).take(12).collect();
+    let today = w.day;
+    for (i, &p) in people.iter().enumerate() {
+        let split = [b, c, d][i % 3];
+        for (event, who) in [(killing, split), (theft, c)] {
+            w.npc_mut(p).remember(MemoryRef {
+                event,
+                believed: Suspect::Person(who),
+                confidence: 70,
+                source: Source::Told(a),
+                day: today,
+                weight: 100,
+            });
+        }
+    }
+    let (k, t) = (talkability(&w, killing), talkability(&w, theft));
+    assert!(k > 2.5 * t, "a disputed killing {k} vs a settled theft {t}");
+}
+
+/// Rosnow: frightened people talk.
+#[test]
+fn fear_loosens_tongues() {
+    use super::systems::county_fear;
+    let mut w = World::new(6);
+    let calm = county_fear(&w);
+    for n in &mut w.npcs {
+        n.emotions.fear = 70.0;
+    }
+    assert!(county_fear(&w) > calm + 0.4);
+}
+
+/// Stories sharpen in the telling, toward the teller's old grudges, but
+/// most tellings carry what the teller believed. Each sharpening moves the
+/// teller's own memory first, so the auditor sees an honest record.
+#[test]
+fn stories_sharpen_but_mostly_hold() {
+    let (mut sharpened, mut tellings) = (0, 0);
+    for seed in [2, 4, 6, 8] {
+        let mut w = World::new(seed);
+        w.run_days(450);
+        for e in &w.events {
+            match e.kind {
+                EventKind::Gossip { .. } => tellings += 1,
+                EventKind::Belief {
+                    reason: "the story sharpened in the telling",
+                    ..
+                } => sharpened += 1,
+                _ => {}
+            }
+        }
+        assert!(super::audit::check(&w).is_empty(), "seed {seed}");
+    }
+    assert!(sharpened > 0, "no story ever sharpened");
+    assert!(
+        (sharpened as f32) < 0.2 * tellings as f32,
+        "{sharpened} of {tellings} tellings sharpened"
+    );
+}

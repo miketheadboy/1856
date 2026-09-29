@@ -177,7 +177,10 @@ pub fn odds(world: &World, plaintiff: NpcId, defendant: NpcId, letters: f32) -> 
         (Faction::ProSlavery, Faction::FreeState) => 0.2,
         _ => 0.0,
     };
-    (0.45 + if filed { 0.25 } else { 0.0 } + 0.15 * letters + bias).clamp(0.05, 0.95)
+    // Whose word the court takes (`standing`).
+    let names =
+        0.3 * (super::standing::word(world, plaintiff) - super::standing::word(world, defendant));
+    (0.45 + if filed { 0.25 } else { 0.0 } + 0.15 * letters + bias + names).clamp(0.05, 0.95)
 }
 
 /// Today is an election day.
@@ -224,6 +227,12 @@ pub fn sue(world: &mut World, plaintiff: NpcId, defendant: NpcId, letters: f32) 
 pub fn on_event(world: &mut World, ev: &WorldEvent) {
     match ev.kind {
         EventKind::Election { .. } | EventKind::VoteSold { .. } => on_election(world, ev),
+        // The dead come off the muster roll the day they die.
+        EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => {
+            if let Some((_, _, men)) = &mut world.law.muster {
+                men.retain(|&m| m != victim);
+            }
+        }
         EventKind::ClaimJumped {
             family,
             lost,

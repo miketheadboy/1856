@@ -87,6 +87,9 @@ pub struct Warrants {
     pub posse_riders: Vec<(usize, NpcId)>,
     /// You're in the timber until this day.
     pub lying_low: Option<Day>,
+    /// Everyone the justice ever convicted: a record follows a man
+    /// (`standing`).
+    pub record: Vec<NpcId>,
 }
 
 /// In jail, or gone. Doesn't plot, vote, muster, or work.
@@ -208,6 +211,10 @@ fn complain(world: &mut World, ev: &WorldEvent) {
     let h_family = h.family;
     // The bogus courts hear their own side at full weight.
     let mut weight = oath * if h_side == jf { 1.0 } else { 0.5 };
+    // A woman's oath, a beggar's, a jailbird's: sworn, and weighed light.
+    weight *= super::standing::word(world, holder).min(1.0);
+    // Against a man of no account it takes fewer oaths.
+    let needed = SWORN * super::standing::repute(world, accused).clamp(0.5, 1.0);
     if a_side == jf {
         weight *= 0.5;
     }
@@ -236,7 +243,7 @@ fn complain(world: &mut World, ev: &WorldEvent) {
     }
     c[i].2 += weight;
     c[i].3.push(holder);
-    if c[i].2 < SWORN {
+    if c[i].2 < needed {
         return;
     }
     c.remove(i);
@@ -341,7 +348,13 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             if world.families[fam].stores.cash < 0 {
                 let short = -world.families[fam].stores.cash;
                 world.families[fam].stores.cash = 0;
-                world.families[fam].stores.debt += short;
+                // A man who can't pay the costs works them off in the jail,
+                // a dollar a day; the store takes the rest on his name.
+                let worked = if convicted { short.min(30) } else { 0 };
+                world.families[fam].stores.debt += short - worked;
+                if let Some(h) = world.warrants.held.iter_mut().find(|h| h.0 == accused) {
+                    h.1 = Day(h.1.0 + worked as u32);
+                }
             }
             if convicted
                 && let Some(judge) = justice(world)
@@ -731,6 +744,8 @@ fn try_case(world: &mut World, accused: NpcId, i: usize, plea: f32) {
         p -= 0.25 * world.life.skill(super::life::Skill::Oratory);
     }
     p -= plea;
+    // Nobody to speak to his character.
+    p += 0.3 * (1.0 - super::standing::repute(world, accused)).max(0.0);
     let convicted = world.rng.chance(p.clamp(0.05, 0.95));
     let killing = matches!(world.events[w.about as usize].kind, EventKind::Death { .. });
     let (days, fine) = if convicted {
@@ -749,6 +764,9 @@ fn try_case(world: &mut World, accused: NpcId, i: usize, plea: f32) {
         Some(w.about),
     );
     if convicted {
+        if !world.warrants.record.contains(&accused) {
+            world.warrants.record.push(accused);
+        }
         let until = Day(world.day.0 + days as u32);
         world.warrants.held.retain(|h| h.0 != accused);
         world.warrants.held.push((accused, until, Held::Jail));
@@ -1127,10 +1145,14 @@ mod tests {
         let mut seen = not.to_vec();
         let mut out = Vec::new();
         for n in w.living() {
+            // Men: these tests are about sides, not standing (see
+            // `standing` for whose oath weighs less; `swear` gives them
+            // their letters).
             if n.faction == side
                 && LifeStage::of(n.age) == LifeStage::Adult
                 && Some(n.id) != w.law.justice
                 && !seen.contains(&n.family)
+                && !crate::sim::world::is_woman(&n.name)
             {
                 seen.push(n.family);
                 out.push(n.id);
@@ -1150,6 +1172,11 @@ mod tests {
     }
 
     fn swear(w: &mut World, holder: NpcId, about: EventId, blamed: NpcId) {
+        w.npc_mut(holder).temperament.literacy = 0.9;
+        let f = w.npc(holder).family as usize;
+        w.families[f].stores.debt = 0;
+        w.families[f].stores.hungry_days = 0;
+        w.families[f].stores.begged_on = None;
         w.emit_root(
             EventKind::Belief {
                 holder,

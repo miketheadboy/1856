@@ -30,6 +30,8 @@
 //!   dress                    what the county wears, the looks, and whose colors
 //!   hands                    a watch at night and a hired hand, against nobody, over
 //!                            --seeds: riders turned back, fires, strays, timber
+//!   standing                 disparity: per 100 person-years, how often each band of
+//!                            standing is wrongly blamed, papered, convicted, jumped
 //!   audit                    every system's books against the others', every day,
 //!                            over --seeds: breaches by rule with a first example
 //!   metrics <file.csv>       daily metrics for charts
@@ -122,6 +124,7 @@ fn main() {
         "sick" => sick_lens(&o),
         "dress" => dress_lens(&o),
         "audit" => audit_lens(&o),
+        "standing" => standing_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
@@ -184,6 +187,53 @@ fn law_lens(o: &Opts) {
         l.law_shot,
         l.bounties_paid
     );
+}
+
+/// Disparity across seeds: each day, for every grown person, note which
+/// positions they hold (a woman, seen begging, new, a jailbird...) and count
+/// what the county did to them that day. Rates are per 100 person-years;
+/// the ratio is against grown people holding none of them.
+fn standing_lens(o: &Opts) {
+    use bleeding_kansas::sim::standing::{self, rate};
+    const COLS: [&str; 4] = ["wrongly blamed", "papers", "convicted", "claims jumped"];
+    let rows = standing::disparity(o.seeds, o.days);
+    println!(
+        "{} seeds x {} days, grown people. per 100 person-years (x ratio to none of these)\n",
+        o.seeds, o.days
+    );
+    let mut head = format!("{:<26} {:>8}", "position", "people");
+    for c in COLS {
+        head += &format!(" {c:>17}");
+    }
+    println!("{head}");
+    let base = rows[0].1;
+    for (name, v) in &rows {
+        let mut line = format!(
+            "{name:<26} {:>8.1}",
+            v[0] / (o.seeds as f64 * o.days as f64)
+        );
+        for c in 1..5 {
+            let r = rate(v, c);
+            let b = rate(&base, c);
+            let ratio = if b > 0.0 {
+                format!("x{:.1}", r / b)
+            } else {
+                "-".into()
+            };
+            line += &format!(" {r:>10.1} {ratio:>6}");
+        }
+        println!("{line}");
+    }
+    let mut w = World::new(o.seed);
+    w.run_days(o.days.min(365));
+    println!(
+        "\nseed {} after {} days, who stands where:",
+        o.seed,
+        o.days.min(365)
+    );
+    for n in w.living().filter(|n| n.id != 0) {
+        println!("  {:<22} {}", n.name, standing::describe(&w, n.id));
+    }
 }
 
 /// The auditor across seeds: run each county day by day and lay the books

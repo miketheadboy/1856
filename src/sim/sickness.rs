@@ -759,6 +759,26 @@ pub fn tend(world: &mut World) {
                 break;
             }
         }
+        // Someone sits up with them: the family's own if anyone's on their
+        // feet, and the neighbor women for a family whose name is good. The
+        // widow alone and the jailbird's house wait longer (`standing`).
+        if !c.nursed {
+            let well = world.living().any(|n| {
+                n.family == fam
+                    && n.id != c.who
+                    && world.sickness.sick(n.id).is_none()
+                    && LifeStage::of(n.age) != LifeStage::Child
+            });
+            let name = world
+                .head_of(fam)
+                .map_or(0.5, |h| super::standing::word(world, h).min(1.0));
+            let p = if well { 0.25 } else { 0.0 } + 0.2 * name;
+            if world.rng.chance(p)
+                && let Some(x) = world.sickness.cases.iter_mut().find(|x| x.who == c.who)
+            {
+                x.nursed = true;
+            }
+        }
         let t = world.npc(c.who).temperament;
         if c.left > 3
             && world.families[fam as usize].stores.cash >= DOCTOR_FEE + 10
