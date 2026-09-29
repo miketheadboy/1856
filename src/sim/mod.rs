@@ -19,6 +19,7 @@ pub mod family;
 pub mod farmwork;
 pub mod geography;
 pub mod ghosts;
+pub mod hands;
 pub mod history;
 pub mod homestead;
 pub mod institutions;
@@ -37,6 +38,7 @@ pub mod reconcile;
 pub mod rng;
 pub mod romance;
 pub mod systems;
+pub mod warrant;
 pub mod world;
 
 pub use calendar::Day;

@@ -516,10 +516,12 @@ pub enum EventKind {
         method: Retaliation,
     },
     /// How a standoff with `other` ended. `yours`: you rode to them.
+    /// `law`: somebody came, or went, with a warrant.
     Standoff {
         other: NpcId,
         end: super::action::End,
         yours: bool,
+        law: bool,
     },
     /// Someone on a place in the dark. `seen`: how many saw a face.
     Prowler {
@@ -546,6 +548,75 @@ pub enum EventKind {
     Searched {
         family: FamilyId,
         seized: u8,
+    },
+    /// Someone on watch saw riders coming and called out; they turned back.
+    /// No `watchman`: hired guns were sitting on the place.
+    TurnedBack {
+        rider: NpcId,
+        target: NpcId,
+        watchman: Option<NpcId>,
+    },
+    /// Taken on by the month.
+    HandHired {
+        hand: NpcId,
+        family: FamilyId,
+    },
+    /// Walked off, or let go. `unpaid`: there was no money on the first.
+    HandQuit {
+        hand: NpcId,
+        family: FamilyId,
+        unpaid: bool,
+    },
+    /// A hand talked in town about what he's seen in the house.
+    HandTalked {
+        hand: NpcId,
+        family: FamilyId,
+    },
+    /// A company paid to sit on a place, or to ride on one. `printed`: the
+    /// other side's paper found out who paid.
+    Hirelings {
+        company: u8,
+        payer: NpcId,
+        target: Option<NpcId>,
+        printed: bool,
+    },
+    /// The justice wrote a paper on a man for a violent act people swear to.
+    Warrant {
+        accused: NpcId,
+        about: EventId,
+        bounty: u16,
+    },
+    /// Riders out to serve a warrant. `found`: the man was there to be found.
+    PosseOut {
+        accused: NpcId,
+        leader: NpcId,
+        men: u8,
+        found: bool,
+    },
+    /// Taken in on a warrant.
+    Arrested {
+        accused: NpcId,
+        by: NpcId,
+    },
+    /// Before the justice. `days` in the Lecompton jail if convicted.
+    Tried {
+        accused: NpcId,
+        judge: NpcId,
+        convicted: bool,
+        days: u16,
+        fine: u16,
+    },
+    /// Lit out ahead of the law.
+    Fled {
+        accused: NpcId,
+        days: u16,
+    },
+    /// The price on a man's head, paid out.
+    BountyPaid {
+        hunter: NpcId,
+        accused: NpcId,
+        dollars: u16,
+        dead: bool,
     },
     /// Someone decided to act on a belief. Resolved by the retaliation system.
     Retaliation {

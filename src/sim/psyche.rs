@@ -259,9 +259,16 @@ pub fn would_steal(world: &World, id: NpcId) -> f32 {
 
 /// Average fitness of a family's working hands, 0..1+: drives the harvest.
 pub fn labor(world: &World, family: u32) -> f32 {
+    // Hired out, a man works someone else's ground; in jail, nobody's.
     let hands: Vec<f32> = world
         .living()
-        .filter(|n| n.family == family && LifeStage::of(n.age) != LifeStage::Child)
+        .filter(|n| {
+            let mine = n.family == family && !world.hands.is_hired(n.id);
+            let hired = family == 0 && world.hands.is_hired(n.id);
+            (mine || hired)
+                && LifeStage::of(n.age) != LifeStage::Child
+                && !super::warrant::held(world, n.id)
+        })
         .map(|n| {
             let grief = 1.0 - n.emotions.grief / 200.0;
             let wound = if n.wounded { 0.3 } else { 1.0 };

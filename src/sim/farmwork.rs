@@ -310,7 +310,9 @@ fn strays(world: &mut World, family: FamilyId) {
     if hh.cattle == 0 {
         return;
     }
-    let p = 0.004 * (1.0 - hh.work.fences) * hh.cattle as f32;
+    // Someone riding the fence line finds most of them before they're gone.
+    let p =
+        0.004 * (1.0 - hh.work.fences) * hh.cattle as f32 * super::hands::herding(world, family);
     if !world.rng.chance(p) || !world.rng.chance(0.5) {
         return;
     }

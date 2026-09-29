@@ -5,8 +5,9 @@
 //!
 //! Debug knobs (env vars): BK_SEED, BK_START_DAYS (run the sim ahead before
 //! showing it), BK_DAY_SECONDS (clock speed), BK_SCREEN (county, claim,
-//! lawrence, franklin, lecompton), BK_PLAY (gate, door, raid, ambush, bench: start
-//! in one of the action games against the Pikes).
+//! lawrence, franklin, lecompton), BK_PLAY (gate, door, raid, ambush, bench, posse,
+//! paper: start in one of the action games against the Pikes, or with the law on
+//! the road).
 
 // Bevy systems take their world as arguments; long parameter lists and
 // query types are how it's written.
@@ -275,6 +276,21 @@ fn debug_play(
         }
         Ok("bench") => {
             game.craft(world, bleeding_kansas::sim::arms::Craft::Balls, 1.0);
+        }
+        Ok("posse") | Ok("paper") => {
+            use bleeding_kansas::sim::warrant;
+            // A killing you may or may not have done, sworn to.
+            let about = world.emit_root(
+                bleeding_kansas::sim::EventKind::ShotAt {
+                    shooter: bleeding_kansas::sim::world::PLAYER,
+                    target: pike,
+                },
+                None,
+            );
+            let i = warrant::write(world, bleeding_kansas::sim::world::PLAYER, about, 45);
+            if std::env::var("BK_PLAY").as_deref() == Ok("posse") {
+                warrant::serve_now(world, i);
+            }
         }
         Ok("ambush") => {
             if let Some(plan) = action::ambush_plan(world, pike) {

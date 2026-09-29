@@ -26,6 +26,7 @@ src/main.rs      Bevy view: app wiring, screens (County, Claim, Town). No rules 
   cmds.rs        commands -> sim verbs; submenus (neighbor, after dark, store...)
   scene.rs       letterboxed moments: the knock, the petition, the muster, riders at the gate...
   duel.rs        standoffs by hand (talk down, stare down, quick-draw and aim), the road ambush, the bench
+                 (the posse at your gate plays the same standoff)
   raid.rs        a neighbor's place at night: lantern cones, a dog, crawl, hold E to do it
   ui.rs          blue command windows, toast, top bar, status (Tab), paper (N)
   panels.rs      text readouts; scenery.rs map art, seasons, weather, night
@@ -65,6 +66,8 @@ Sim modules (`src/sim/`):
 | `land` | Lawrence town lots through the 1856 emigration, the Sack, the 1857 boom and the Panic; buying a broken family's relinquishment (they depart for the States) |
 | `action` | Phase B: plots against you park at the gate as standoffs (talk, face, draw, back down) or you confront a neighbor; raid plans and ambush plans; the minigame's witnesses are *staged* for the perception system; men faced down are cowed for a season |
 | `arms` | Phase C: each house's armory (Sharps "books" from the East, old guns, lead, balls, cartridges, rails) and where it's hid; the bench (cast, roll, split); Wednesday crates the river towns may seize; the sheriff's posse searching Free-State houses after its musters |
+| `hands` | Phase D: kin and hired hands set to the fields, the stock, the timber or the night watch; a watch turns riders back at the fence (neighbors in a feud post one too); hands by the month from hungry households, wages to their people, the unpaid walk and the sour talk (the other side learns where the guns are); partisan companies (Kickapoo Rangers, Buford's, the Stubbs, Lane's) rented to sit on your place or ride on a neighbor's, and the other side's paper printing who paid |
+| `warrant` | Phase D: the justice writes papers on what people swear to (eyes, losses, a neighbor's word; never the paper), slow on his own side; posses and bounty hunters; men come in, run, or fight; trials at Lecompton; you can give yourself up, lie low, light out for the States, meet them at the gate, or take a paper yourself (paid on delivery, half for a body). Violence only: no paper on a freedom seeker |
 | `intrigue` | the player's dark verbs: secrets learned at the groggery or by moonlight, blackmail, exposure, sabotage (shoot a cow, foul a well, cut a fence, wet the hay) read through attribution, slander |
 | `railroad` | the Underground Railroad (MVP §25): freedom seekers who pick doors by word and travel in the dark of the moon; families answer by private belief (hide, turn away, turn in for the reward); food as evidence; pursuers who linger and ask; captures read by attribution; harboring charged under the 1855 slave code |
 | `legacy` | the papers write you up (readers take the paper's view of you); a scandal shuts the store's book; your children drift toward your path and, near grown, take after you or rebel |
@@ -94,13 +97,15 @@ cargo run --bin lab --no-default-features -- life preacher --days 540
 cargo run --bin lab --no-default-features -- county --days 730
 cargo run --bin lab --no-default-features -- standoff --seeds 40
 cargo run --bin lab --no-default-features -- arms --days 330
+cargo run --bin lab --no-default-features -- law --days 730
+cargo run --bin lab --no-default-features -- hands --seeds 10 --days 540
 cargo run --bin headless --no-default-features -- --seed 15 --truth
 cargo run --bin headless --no-default-features -- --survey 30 --days 730
 
 cargo run                                         # the game (needs a display)
 BK_SEED=15 BK_START_DAYS=200 BK_DAY_SECONDS=2 cargo run
 BK_SCREEN=lawrence cargo run                      # start in county|claim|lawrence|franklin|lecompton
-BK_PLAY=gate cargo run                            # straight into gate|door|raid|ambush|bench
+BK_PLAY=gate cargo run                            # straight into gate|door|raid|ambush|bench|posse|paper
 ```
 
 Linux containers need `libwayland-dev libxkbcommon-dev libasound2-dev
@@ -139,7 +144,10 @@ Tune with the lab, not by feel: `lab gate`, `lab evil`, `lab winter`,
 started in about half of seeds, ~3–4 violent deaths per seed, harsh winters
 measurably worse than mild ones by August 1856. Known open issues: faction
 grievance still peaks above 100 in winter 1855–56 (saturates the UI bars and
-trips the Westport blockade early); fires run ~25 per two years.
+trips the Westport blockade early); fires run ~30 per two years (Phase D's
+watches brought them down from ~34); the justice's papers land on the wrong
+man ~80% of the time, because the county's blame does (`headless --survey`
+prints it).
 
 ## Style
 

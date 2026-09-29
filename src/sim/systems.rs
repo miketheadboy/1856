@@ -48,6 +48,8 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::market::on_event(world, ev);
     super::action::on_event(world, ev);
     super::arms::on_event(world, ev);
+    super::hands::on_event(world, ev);
+    super::warrant::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
@@ -490,6 +492,7 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
         || !h.alive
         || !able
         || h.plotting.is_some()
+        || super::warrant::held(world, holder)
         || cooling
         || !world.npc(target).alive
     {
@@ -570,7 +573,11 @@ pub fn resolve_plot(
     caused_by: Option<super::events::EventId>,
 ) -> Option<Retaliation> {
     world.npc_mut(actor).plotting = None;
-    if !world.npc(actor).alive || !world.npc(target).alive {
+    if !world.npc(actor).alive || !world.npc(target).alive || super::warrant::held(world, actor) {
+        return None;
+    }
+    // Someone sat up with a rifle and called out at the fence.
+    if super::hands::turn_back(world, actor, target, caused_by) {
         return None;
     }
     if let Some(why) = super::reconcile::mercy(world, actor, target, method) {

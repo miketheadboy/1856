@@ -23,6 +23,10 @@
 //!                            seizures and searches over --days
 //!   standoff                 the men who'd come to your gate: their draw, what drives
 //!                            them, and how often each way of meeting them works
+//!   law                      every paper the justice wrote, who it named, who really
+//!                            did it, and how it was served
+//!   hands                    a watch at night and a hired hand, against nobody, over
+//!                            --seeds: riders turned back, fires, strays, timber
 //!   metrics <file.csv>       daily metrics for charts
 //!   trace <file.tsv>         every event with its cascade links
 //!   time                     how long a simulated year takes
@@ -108,15 +112,110 @@ fn main() {
         "time" => time(&o),
         "standoff" => standoff(&o),
         "arms" => arms_lens(&o),
+        "law" => law_lens(&o),
+        "hands" => hands_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
                 .lines()
-                .take(28)
+                .take(32)
                 .map(|l| l.trim_start_matches("//!").trim_start_matches(' '))
                 .collect::<Vec<_>>()
                 .join("\n")
         ),
+    }
+}
+
+/// Phase D: the justice's papers, with the truth beside them.
+fn law_lens(o: &Opts) {
+    use bleeding_kansas::sim::warrant;
+    let w = world(o);
+    println!("seed {} after {} days ({})\n", o.seed, o.days, w.day);
+    for p in &w.warrants.list {
+        let truth = warrant::truth(&w, p.about)
+            .map(|t| w.name(t).to_string())
+            .unwrap_or_else(|| "nobody".into());
+        println!(
+            "{:<22} ${:<4} {:<8?} day {:>4}  [truth: {}{}]",
+            w.name(p.accused),
+            p.bounty,
+            p.state,
+            p.issued.0,
+            truth,
+            if warrant::truth(&w, p.about) == Some(p.accused) {
+                ""
+            } else {
+                " — the wrong man"
+            }
+        );
+    }
+    println!();
+    for e in &w.events {
+        if matches!(
+            e.kind,
+            EventKind::Warrant { .. }
+                | EventKind::PosseOut { .. }
+                | EventKind::Arrested { .. }
+                | EventKind::Tried { .. }
+                | EventKind::Fled { .. }
+                | EventKind::BountyPaid { .. }
+        ) {
+            println!("{}", chronicle::debug_line(&w, e, true));
+        }
+    }
+    let l = warrant::ledger(&w);
+    println!(
+        "\n{} papers ({} on the wrong man), {} arrested, {} convicted, {} fled, {} lapsed; {} shot by the law, {} lawmen shot; ${} in bounties",
+        l.papers,
+        l.wrong_man,
+        l.arrested,
+        l.convicted,
+        l.fled,
+        l.lapsed,
+        l.shot_by_law,
+        l.law_shot,
+        l.bounties_paid
+    );
+}
+
+/// Phase D: what a watch and a hired hand are worth, against nobody.
+fn hands_lens(o: &Opts) {
+    use bleeding_kansas::sim::hands::{self, Task};
+    let run = |seed: u64, staffed: bool| {
+        let mut w = World::new(seed);
+        w.autopilot_player = false;
+        w.families[0].stores.cash += 200;
+        if staffed {
+            if let Some(&k) = hands::workers(&w).first() {
+                hands::assign(&mut w, k, Task::Watch);
+            }
+            if let Some(&c) = hands::candidates(&w).first() {
+                hands::hire(&mut w, c);
+                hands::assign(&mut w, c, Task::Woods);
+            }
+        }
+        w.run_days(o.days);
+        let count = |f: &dyn Fn(&EventKind) -> bool| w.events.iter().filter(|e| f(&e.kind)).count();
+        (
+            count(&|k| matches!(k, EventKind::TurnedBack { target: 0, .. })),
+            count(&|k| matches!(k, EventKind::RidersAtGate { .. })),
+            count(&|k| matches!(k, EventKind::Fire { owner: 0, .. })),
+            count(&|k| matches!(k, EventKind::Strayed { owner: 0 })),
+            w.families[0].stores.goods[Good::Timber.index()],
+            w.hands.hired.len(),
+        )
+    };
+    println!(
+        "{:>5}  {:>22}  {:>22}",
+        "seed", "nobody: gate fire stray", "watch+hand: back gate fire timber kept"
+    );
+    for seed in 1..=o.seeds {
+        let a = run(seed, false);
+        let b = run(seed, true);
+        println!(
+            "{:>5}  {:>10} {:>5} {:>5}  {:>9} {:>5} {:>5} {:>6.0} {:>4}",
+            seed, a.1, a.2, a.3, b.0, b.1, b.2, b.4, b.5
+        );
     }
 }
 
@@ -177,6 +276,7 @@ fn standoff(o: &Opts) {
             day: w.day,
             yours: false,
             riders: Vec::new(),
+            serving: None,
         };
         println!(
             "{:<22} {:>5.2}s  {:<14} {:>8.2}",

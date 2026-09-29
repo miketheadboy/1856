@@ -159,6 +159,7 @@ pub fn eligible(world: &World, id: NpcId) -> bool {
         && !n.wounded
         && LifeStage::of(n.age) == LifeStage::Adult
         && (id == PLAYER || !is_woman(&n.name))
+        && !super::warrant::held(world, id)
 }
 
 /// The chance a plaintiff wins before this justice.

@@ -160,7 +160,28 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
             } else {
                 "Your mouth is dry."
             };
-            let (title, body, stand) = if s.yours {
+            let paper = s.serving.and_then(|i| world.warrants.list.get(i));
+            let (title, body, stand) = if let Some(p) = paper {
+                if s.yours {
+                    (
+                        "With a paper".to_string(),
+                        format!(
+                            "{name} comes out onto the step and sees the justice's paper in your hand. ${} on delivery, half if you bring him in over a saddle. {hand} {nerve}",
+                            p.bounty
+                        ),
+                        "Let him be",
+                    )
+                } else {
+                    (
+                        "The law at the gate".to_string(),
+                        format!(
+                            "{name}, {company}, with a paper from the justice. It says you did a thing; it doesn't say whether you did. ${} on your head. {hand} {nerve}",
+                            bleeding_kansas::sim::warrant::price_on(world, PLAYER)
+                        ),
+                        "Put your hands up",
+                    )
+                }
+            } else if s.yours {
                 (
                     format!(
                         "At the {} door",
@@ -213,6 +234,37 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                         ),
                         item(stand, Cmd::StandAside),
                     ],
+                ),
+            });
+        }
+    }
+
+    // A paper with your name on it, the day word reaches you.
+    if let Some(&i) = bleeding_kansas::sim::warrant::wanted(world, PLAYER).last() {
+        let key = format!("paper {i}");
+        if unseen(&key, scenes) && family::away(world).is_none() {
+            let w = &world.warrants.list[i];
+            let what = bleeding_kansas::sim::chronicle::charge_line(world, w.about);
+            let mut items = cmds::wanted_choices(world);
+            items.insert(
+                0,
+                cmds::when(
+                    "Ride to Lecompton and give yourself up",
+                    Cmd::Surrender,
+                    world.life.acted_on != Some(world.day),
+                ),
+            );
+            items.push(item("Wait for them", Cmd::Close));
+            return Some(Moment {
+                key,
+                title: "A paper with your name on it".into(),
+                art: art.office.clone(),
+                spec: MenuSpec::new(
+                    format!("Wanted: ${}", w.bounty),
+                    format!(
+                        "Word comes up the road before the riders do. The justice has written a paper on you for {what}, on the oaths of people who believe it. Whether you did it is not a question the paper asks."
+                    ),
+                    items,
                 ),
             });
         }

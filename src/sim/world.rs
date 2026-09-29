@@ -242,6 +242,10 @@ pub struct World {
     pub railroad: super::railroad::Railroad,
     /// Standoffs at the gate, and who saw what the player played out.
     pub action: super::action::Action,
+    /// Who works your place and who watches it; hired guns.
+    pub hands: super::hands::Hands,
+    /// Papers the justice has written, and who's in his jail.
+    pub warrants: super::warrant::Warrants,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -267,9 +271,37 @@ const GIVEN_NAMES: [&str; 32] = [
 ];
 
 /// Given names that were women's in 1855. Marriage law was one man, one woman.
-const WOMEN: [&str; 15] = [
-    "Martha", "Ruth", "Clara", "Ada", "Sarah", "Lydia", "Hannah", "Abigail", "Maggie", "Louise",
-    "Prudence", "Delia", "Hester", "Ramona", "Johanna",
+/// Newcomers by mail and babies born in the county are on the list too.
+const WOMEN: [&str; 29] = [
+    "Martha",
+    "Ruth",
+    "Clara",
+    "Ada",
+    "Sarah",
+    "Lydia",
+    "Hannah",
+    "Abigail",
+    "Maggie",
+    "Louise",
+    "Prudence",
+    "Delia",
+    "Hester",
+    "Ramona",
+    "Johanna",
+    "Eliza",
+    "Mercy",
+    "Harriet",
+    "Phoebe",
+    "Temperance",
+    "Charity",
+    "Lucy",
+    "Mary",
+    "Emma",
+    "Ellen",
+    "Nancy",
+    "Lorinda",
+    "Belle",
+    "Susannah",
 ];
 
 pub fn is_woman(name: &str) -> bool {
@@ -494,6 +526,8 @@ impl World {
             land: super::land::Land::default(),
             railroad: super::railroad::Railroad::default(),
             action: super::action::Action::default(),
+            hands: super::hands::Hands::default(),
+            warrants: super::warrant::Warrants::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -780,7 +814,9 @@ impl World {
         super::homestead::daily(self);
         super::mail::daily(self);
         super::arms::daily(self);
+        super::hands::daily(self);
         super::law::daily(self);
+        super::warrant::daily(self);
         super::bees::daily(self);
         super::railroad::daily(self);
         super::civic::daily(self);
@@ -1014,6 +1050,7 @@ impl World {
         super::land::monthly(self);
         super::homestead::monthly(self);
         super::arms::monthly(self);
+        super::hands::monthly(self);
         super::civic::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);

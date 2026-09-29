@@ -86,6 +86,9 @@ pub struct Armory {
     /// Split rails, for mending fence.
     pub rails: u16,
     pub hide: Hide,
+    /// A hand talked: the other side knows where the guns are until they're
+    /// moved. A search finds them as if they were in the open.
+    pub told: bool,
     /// Rifles ordered from the East, and the Wednesday they're due.
     pub on_order: Option<(Day, u8)>,
     /// One evening at the bench a day.
@@ -230,7 +233,9 @@ pub fn fire(world: &mut World, family: FamilyId) -> bool {
 
 /// Put the guns somewhere.
 pub fn hide(world: &mut World, family: FamilyId, place: Hide) {
-    world.families[family as usize].stores.arms.hide = place;
+    let a = &mut world.families[family as usize].stores.arms;
+    a.hide = place;
+    a.told = false;
 }
 
 /// Send east for rifles. They come in on a Wednesday two or three weeks on,
@@ -349,7 +354,12 @@ fn searches(world: &mut World) {
             continue;
         }
         let a = &fam.stores.arms;
-        let found = a.rifles > 0 && world.rng.chance(a.hide.found());
+        let odds = if a.told {
+            Hide::Open.found()
+        } else {
+            a.hide.found()
+        };
+        let found = a.rifles > 0 && world.rng.chance(odds);
         let seized = if found { a.rifles } else { 0 };
         if found {
             let a = &mut world.families[f].stores.arms;

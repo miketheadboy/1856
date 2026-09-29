@@ -155,6 +155,19 @@ pub fn explain_npc(world: &World, id: NpcId) -> String {
         n.violence,
         n.plotting.map(|p| world.name(p).to_string())
     );
+    let papers = super::warrant::wanted(world, id);
+    let hand = world.hands.hired.iter().find(|h| h.npc == id);
+    if !papers.is_empty() || super::warrant::held(world, id) || hand.is_some() {
+        let _ = writeln!(
+            s,
+            "LAW       papers {} (${} on the head)  held {}  {}",
+            papers.len(),
+            super::warrant::price_on(world, id),
+            super::warrant::held(world, id),
+            hand.map(|h| format!("your hand (${}/mo, loyalty {:.2})", h.wage, h.loyalty))
+                .unwrap_or_default()
+        );
+    }
     let _ = writeln!(
         s,
         "BODY      str {} hardy {} aim {} stealth {} alert {} recall {}  (frailty {:.2})",

@@ -64,6 +64,8 @@ pub struct Standoff {
     pub yours: bool,
     /// Kin who came along. They see everything.
     pub riders: Vec<NpcId>,
+    /// A warrant is being served, on you or by you (index into the list).
+    pub serving: Option<usize>,
 }
 
 /// What's driving the man in front of you. The talk-down reads it off him.
@@ -151,6 +153,7 @@ pub fn park(
         day: world.day,
         yours: false,
         riders,
+        serving: None,
     });
     world.emit_root(
         EventKind::RidersAtGate {
@@ -186,8 +189,72 @@ pub fn confront(world: &mut World, t: NpcId) -> bool {
         day: world.day,
         yours: true,
         riders: Vec::new(),
+        serving: None,
     });
     true
+}
+
+/// A posse or a hunter at your gate with a paper on you.
+pub(crate) fn serve_at_gate(world: &mut World, leader: NpcId, riders: Vec<NpcId>, paper: usize) {
+    world.npc_mut(leader).alibi = None;
+    world.action.standoff = Some(Standoff {
+        actor: leader,
+        method: Retaliation::Ambush,
+        caused_by: None,
+        day: world.day,
+        yours: false,
+        riders,
+        serving: Some(paper),
+    });
+}
+
+/// An act with known eyes: they see who did it; everyone else guesses.
+pub(crate) fn witnessed(
+    world: &mut World,
+    actor: NpcId,
+    eyes: Vec<NpcId>,
+    kind: EventKind,
+    caused_by: Option<EventId>,
+) -> EventId {
+    world.action.staged = Some((actor, eyes));
+    let id = world.emit_root(kind, caused_by);
+    world.run_cascades();
+    world.action.staged = None;
+    id
+}
+
+/// The same, done serving a warrant: no paper gets written on it.
+pub(crate) fn witnessed_lawful(
+    world: &mut World,
+    actor: NpcId,
+    eyes: Vec<NpcId>,
+    kind: EventKind,
+    caused_by: Option<EventId>,
+) -> EventId {
+    world.action.staged = Some((actor, eyes));
+    let id = world.emit_root(kind, caused_by);
+    world.warrants.lawful.push(id);
+    world.run_cascades();
+    world.action.staged = None;
+    id
+}
+
+/// Done by strangers in the dark on someone's pay: nobody saw a face.
+pub(crate) fn unseen(
+    world: &mut World,
+    actor: NpcId,
+    kind: EventKind,
+    caused_by: Option<EventId>,
+) -> EventId {
+    witnessed(world, actor, Vec::new(), kind, caused_by)
+}
+
+/// Run something that emits acts by `actor` with nobody's eyes on them.
+pub(crate) fn quietly(world: &mut World, actor: NpcId, f: impl FnOnce(&mut World)) {
+    world.action.staged = Some((actor, Vec::new()));
+    f(world);
+    world.run_cascades();
+    world.action.staged = None;
 }
 
 /// The two things most on his mind, strongest first.
@@ -246,7 +313,8 @@ pub fn nerve(world: &World) -> f32 {
         .living()
         .filter(|n| n.family == 0 && n.id != PLAYER && LifeStage::of(n.age) == LifeStage::Adult)
         .count()
-        .min(2) as f32;
+        .min(2) as f32
+        + super::hands::at_back(world).min(3) as f32;
     // Guns you can reach, and enough rounds to make them more than furniture.
     let a = &world.families[0].stores.arms;
     let guns = a.at_hand().min(3) as f32;
@@ -324,12 +392,15 @@ fn finish(world: &mut World, end: End) {
         return;
     };
     let actor = s.actor;
-    world.npc_mut(actor).plotting = None;
+    if s.serving.is_none() {
+        world.npc_mut(actor).plotting = None;
+    }
     let id = world.emit_root(
         EventKind::Standoff {
             other: actor,
             end,
             yours: s.yours,
+            law: s.serving.is_some(),
         },
         s.caused_by,
     );
@@ -350,80 +421,94 @@ fn finish(world: &mut World, end: End) {
             .chain(s.riders.iter().copied())
             .collect()
     };
-    let consequence = match end {
-        End::Shot { killed } => {
-            world.npc_mut(PLAYER).violence = world.npc(PLAYER).violence.saturating_add(1);
-            eyes.push(actor);
-            Some((
-                PLAYER,
-                if killed {
-                    EventKind::Death {
-                        victim: actor,
-                        killer: Some(PLAYER),
-                    }
-                } else {
-                    EventKind::Wounded {
-                        victim: actor,
-                        attacker: PLAYER,
-                    }
-                },
-            ))
+    let mut lawful = false;
+    let consequence = match s.serving {
+        Some(paper) => {
+            if matches!(end, End::Shot { .. }) {
+                world.npc_mut(PLAYER).violence = world.npc(PLAYER).violence.saturating_add(1);
+                eyes.push(actor);
+            }
+            super::warrant::settle(world, paper, s.yours, actor, end).map(|(who, kind, law)| {
+                lawful = law;
+                (who, kind)
+            })
         }
-        End::Beaten => {
-            let deadly = if s.method == Retaliation::Ambush {
-                0.35
-            } else {
-                0.15
-            };
-            let today = world.day;
-            let a = world.npc_mut(actor);
-            a.violence = a.violence.saturating_add(1);
-            a.last_revenge = Some(today);
-            Some((
-                actor,
-                if world.rng.chance(deadly) {
-                    EventKind::Death {
-                        victim: PLAYER,
-                        killer: Some(actor),
-                    }
-                } else {
-                    EventKind::Wounded {
-                        victim: PLAYER,
-                        attacker: actor,
-                    }
-                },
-            ))
-        }
-        End::BackedDown if !s.yours => {
-            let today = world.day;
-            world.npc_mut(actor).last_revenge = Some(today);
-            match s.method {
-                Retaliation::Arson if world.families[0].barn_standing => Some((
-                    actor,
-                    EventKind::Fire {
-                        owner: PLAYER,
-                        cause: FireCause::Arson(actor),
-                        spread_from: None,
+        None => match end {
+            End::Shot { killed } => {
+                world.npc_mut(PLAYER).violence = world.npc(PLAYER).violence.saturating_add(1);
+                eyes.push(actor);
+                Some((
+                    PLAYER,
+                    if killed {
+                        EventKind::Death {
+                            victim: actor,
+                            killer: Some(PLAYER),
+                        }
+                    } else {
+                        EventKind::Wounded {
+                            victim: actor,
+                            attacker: PLAYER,
+                        }
                     },
-                )),
-                // Nothing to burn, or they came with rifles: they take a cow
-                // and your pride and ride off.
-                _ => {
-                    world.action.staged = Some((actor, eyes.clone()));
-                    super::economy::steal_from(world, actor, 0, PLAYER);
-                    world.run_cascades();
-                    world.action.staged = None;
-                    None
+                ))
+            }
+            End::Beaten => {
+                let deadly = if s.method == Retaliation::Ambush {
+                    0.35
+                } else {
+                    0.15
+                };
+                let today = world.day;
+                let a = world.npc_mut(actor);
+                a.violence = a.violence.saturating_add(1);
+                a.last_revenge = Some(today);
+                Some((
+                    actor,
+                    if world.rng.chance(deadly) {
+                        EventKind::Death {
+                            victim: PLAYER,
+                            killer: Some(actor),
+                        }
+                    } else {
+                        EventKind::Wounded {
+                            victim: PLAYER,
+                            attacker: actor,
+                        }
+                    },
+                ))
+            }
+            End::BackedDown if !s.yours => {
+                let today = world.day;
+                world.npc_mut(actor).last_revenge = Some(today);
+                match s.method {
+                    Retaliation::Arson if world.families[0].barn_standing => Some((
+                        actor,
+                        EventKind::Fire {
+                            owner: PLAYER,
+                            cause: FireCause::Arson(actor),
+                            spread_from: None,
+                        },
+                    )),
+                    // Nothing to burn, or they came with rifles: they take a cow
+                    // and your pride and ride off.
+                    _ => {
+                        world.action.staged = Some((actor, eyes.clone()));
+                        super::economy::steal_from(world, actor, 0, PLAYER);
+                        world.run_cascades();
+                        world.action.staged = None;
+                        None
+                    }
                 }
             }
-        }
-        _ => None,
+            _ => None,
+        },
     };
     if let Some((who, kind)) = consequence {
-        world.action.staged = Some((who, eyes));
-        world.emit_root(kind, Some(id));
-        world.run_cascades();
-        world.action.staged = None;
+        if lawful {
+            witnessed_lawful(world, who, eyes, kind, Some(id));
+        } else {
+            witnessed(world, who, eyes, kind, Some(id));
+        }
     } else {
         world.run_cascades();
     }
@@ -431,7 +516,10 @@ fn finish(world: &mut World, end: End) {
 
 /// What a standoff does to the people in it.
 pub fn on_event(world: &mut World, ev: &super::events::WorldEvent) {
-    let EventKind::Standoff { other, end, yours } = ev.kind else {
+    let EventKind::Standoff {
+        other, end, yours, ..
+    } = ev.kind
+    else {
         return;
     };
     let today = ev.day;
@@ -578,7 +666,9 @@ pub fn raid_plan(world: &World, target: NpcId) -> Option<RaidPlan> {
             id: m.id,
             alertness: m.body.alertness,
             // The frightened sit up; so do people waiting on you in particular.
-            awake: m.emotions.fear > 45.0 || world.opinion(m.id, PLAYER) < -40,
+            awake: m.emotions.fear > 45.0
+                || world.opinion(m.id, PLAYER) < -40
+                || super::hands::watchmen(world, fam).first() == Some(&m.id),
         })
         .collect();
     let mut objectives = Vec::new();

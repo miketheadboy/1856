@@ -230,6 +230,31 @@ pub fn household(world: &World) -> String {
             ""
         }
     ));
+    let jobs: Vec<String> = bleeding_kansas::sim::hands::workers(world)
+        .into_iter()
+        .map(|id| {
+            format!(
+                "{}{} {}",
+                world.name(id),
+                if world.hands.is_hired(id) {
+                    " (hired)"
+                } else {
+                    ""
+                },
+                bleeding_kansas::sim::hands::task(world, id).label()
+            )
+        })
+        .collect();
+    if !jobs.is_empty() {
+        s.push_str(&format!("\nHands: {}.", jobs.join("; ")));
+    }
+    if let Some(c) = bleeding_kansas::sim::hands::guarded(world) {
+        s.push_str(&format!(" {} are in the barn.", c.name));
+    }
+    let price = bleeding_kansas::sim::warrant::price_on(world, PLAYER);
+    if price > 0 {
+        s.push_str(&format!("\nWANTED: ${price} on your head."));
+    }
     s.push('\n');
     s.push_str(&farmwork::status(world));
     if world.pending_favor.is_some() {

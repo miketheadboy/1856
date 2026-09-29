@@ -21,6 +21,12 @@ pub enum Errand {
     Drinking,
     /// Answered the muster. Half the county thinks that's duty.
     Militia,
+    /// In the Lecompton jail on the justice's warrant.
+    Jail,
+    /// Lit out for the States ahead of a warrant.
+    Fled,
+    /// Riding with a posse after a wanted man.
+    Posse,
 }
 
 impl Errand {
@@ -32,6 +38,9 @@ impl Errand {
             Errand::Town => 2,
             Errand::Drinking => 3,
             Errand::Militia => super::law::SERVICE_DAYS,
+            Errand::Jail => 30,
+            Errand::Fled => super::warrant::RUN_DAYS,
+            Errand::Posse => 2,
         }
     }
 
@@ -44,6 +53,10 @@ impl Errand {
             Errand::Courting => 1.2,
             Errand::Drinking => 1.5,
             Errand::Militia => 0.5,
+            // Nobody chooses the jail; they only choose what put them there.
+            Errand::Jail => 0.8,
+            Errand::Fled => 1.3,
+            Errand::Posse => 0.7,
         }
     }
 
@@ -55,6 +68,9 @@ impl Errand {
             Errand::Town => "in town",
             Errand::Drinking => "at the groggery",
             Errand::Militia => "off with the militia",
+            Errand::Jail => "in the Lecompton jail",
+            Errand::Fled => "gone to the States",
+            Errand::Posse => "off with a posse",
         }
     }
 }
