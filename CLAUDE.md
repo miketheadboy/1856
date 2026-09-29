@@ -80,6 +80,7 @@ Sim modules (`src/sim/`):
 | `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |
 | `chronicle` | text for every event; cascade trees; lineage; "wars nobody started" |
+| `audit` | the books against each other: every system's state checked against the others' (dead men sick, hired or jailed; papers nobody swore to; coats in hat slots; deaths with no event). `lab audit` and `the_books_agree_every_day` |
 | `debug` | daily metrics, event trace, `explain_npc` / `explain_blame` / `explain_price` |
 | `calendar`, `rng` | `Day` (day 0 = 1 Nov 1855), seeded SplitMix64 |
 
@@ -106,6 +107,7 @@ cargo run --bin lab --no-default-features -- law --days 730
 cargo run --bin lab --no-default-features -- hands --seeds 10 --days 540
 cargo run --bin lab --no-default-features -- sick --seeds 20 --days 730
 cargo run --bin lab --no-default-features -- dress
+cargo run --release --bin lab --no-default-features -- audit --seeds 30 --days 730
 cargo run --bin headless --no-default-features -- --seed 15 --truth
 cargo run --bin headless --no-default-features -- --survey 30 --days 730
 
@@ -141,7 +143,11 @@ libxkbcommon-x11-0` to run it headless for screenshots. Set
    upon, legalistic, neutral in the slavery fight, not raiders.
 6. **Observable.** Anything new should show up in `debug::explain_*`, the
    chronicle, or `lab`. If emergence can't be told from a bug, add a lens.
-7. **Tests live with their module** (`#[cfg(test)] mod tests` at the bottom).
+7. **The books agree.** Anything that holds a person (a list of the sick,
+   the hired, the jailed, the wanted) handles `Death`/`Perished` the day
+   it happens. New cross-system facts get a rule in `audit::check`; run
+   `lab audit` after any change that touches two systems.
+8. **Tests live with their module** (`#[cfg(test)] mod tests` at the bottom).
    Cross-system and gate tests live in `src/sim/tests.rs`.
 
 ## Balancing
@@ -176,4 +182,4 @@ prints it).
 ## Git
 
 Work on the designated `claude/...` branch; commit with clear messages; the
-open PR is miketheadboy/1856#1.
+open PR is miketheadboy/1856#2.

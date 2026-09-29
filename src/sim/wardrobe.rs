@@ -597,7 +597,7 @@ pub struct Outfit {
     pub wear: f32,
 }
 
-fn slot_index(s: Slot) -> &'static [usize] {
+pub(crate) fn slot_index(s: Slot) -> &'static [usize] {
     match s {
         Slot::Hat => &[0],
         Slot::Coat => &[1],

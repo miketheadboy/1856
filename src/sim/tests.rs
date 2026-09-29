@@ -286,3 +286,90 @@ fn same_seed_same_history_over_years() {
         assert_eq!(run(), run(), "seed {seed}");
     }
 }
+
+// ---- the books against each other (see `audit`) --------------------------
+
+/// Every system keeps its own books; every day of two years across seeds,
+/// they must agree: no dead man on the sick list or the payroll, no paper
+/// nobody swore to, no corpse in the jail, no coat on a head.
+#[test]
+fn the_books_agree_every_day() {
+    use super::audit;
+    for seed in [1, 4, 9, 15] {
+        let mut w = World::new(seed);
+        for _ in 0..500 {
+            w.advance_day();
+            let breaches = audit::check(&w);
+            assert!(
+                breaches.is_empty(),
+                "seed {seed}, day {}:\n{}",
+                w.day.0,
+                breaches
+                    .iter()
+                    .map(|b| b.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+    }
+}
+
+/// The auditor caught Thomas Pike riding out to shoot Cassius Bell three
+/// days after Bell went to the Lecompton jail. A jailed man isn't home.
+#[test]
+fn a_jailed_man_is_not_home_to_be_shot() {
+    use super::events::Retaliation;
+    use super::warrant::Held;
+    let mut w = World::new(1);
+    let target = first_of_family(&w, 2);
+    let actor = first_of_family(&w, 3);
+    w.warrants
+        .held
+        .push((target, super::Day(w.day.0 + 30), Held::Jail));
+    let out = super::systems::resolve_plot(&mut w, actor, target, Retaliation::Ambush, None);
+    w.run_cascades();
+    assert!(out.is_none());
+    assert!(w.npc(target).alive);
+}
+
+/// ...and then the justice tried the corpse and gave it thirty days.
+#[test]
+fn no_court_tries_a_corpse_and_his_papers_close_the_day_he_dies() {
+    use super::warrant::State;
+    let mut w = World::new(1);
+    w.run_days(3);
+    let accused = first_of_family(&w, 2);
+    let about = w.emit_root(
+        EventKind::Fire {
+            owner: first_of_family(&w, 3),
+            cause: FireCause::Arson(accused),
+            spread_from: None,
+        },
+        None,
+    );
+    w.run_cascades();
+    let i = super::warrant::write(&mut w, accused, about, 20);
+    w.warrants.trials.push((accused, i, w.day));
+    w.player_kill(accused);
+    assert_eq!(w.warrants.list[i].state, State::Dead, "closed the same day");
+    w.advance_day();
+    assert!(
+        !w.events
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::Tried { accused: a, .. } if a == accused)),
+        "tried a dead man"
+    );
+    assert!(!w.warrants.held.iter().any(|h| h.0 == accused));
+}
+
+/// A dead child's fever doesn't outlive the child by a day.
+#[test]
+fn the_dead_leave_the_sick_list_the_day_they_die() {
+    use super::sickness::Disease;
+    let mut w = World::new(2);
+    let who = first_of_family(&w, 4);
+    super::sickness::catch(&mut w, who, Disease::Flux);
+    assert!(w.sickness.cases.iter().any(|c| c.who == who));
+    w.player_kill(who);
+    assert!(!w.sickness.cases.iter().any(|c| c.who == who));
+}

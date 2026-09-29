@@ -598,6 +598,11 @@ pub fn resolve_plot(
     if !world.npc(actor).alive || !world.npc(target).alive || super::warrant::held(world, actor) {
         return None;
     }
+    // A man in the Lecompton jail or gone to the States isn't home to be
+    // shot; his barn still is.
+    if method == Retaliation::Ambush && super::warrant::held(world, target) {
+        return None;
+    }
     // Someone sat up with a rifle and called out at the fence.
     if super::hands::turn_back(world, actor, target, caused_by) {
         return None;

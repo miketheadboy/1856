@@ -30,6 +30,8 @@
 //!   dress                    what the county wears, the looks, and whose colors
 //!   hands                    a watch at night and a hired hand, against nobody, over
 //!                            --seeds: riders turned back, fires, strays, timber
+//!   audit                    every system's books against the others', every day,
+//!                            over --seeds: breaches by rule with a first example
 //!   metrics <file.csv>       daily metrics for charts
 //!   trace <file.tsv>         every event with its cascade links
 //!   time                     how long a simulated year takes
@@ -119,6 +121,7 @@ fn main() {
         "hands" => hands_lens(&o),
         "sick" => sick_lens(&o),
         "dress" => dress_lens(&o),
+        "audit" => audit_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
@@ -181,6 +184,35 @@ fn law_lens(o: &Opts) {
         l.law_shot,
         l.bounties_paid
     );
+}
+
+/// The auditor across seeds: run each county day by day and lay the books
+/// side by side. Prints each broken rule once with the day it first broke.
+fn audit_lens(o: &Opts) {
+    use bleeding_kansas::sim::audit;
+    let mut rules: Vec<(&'static str, usize, String)> = Vec::new();
+    let mut clean = 0;
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        let mut broke = false;
+        for _ in 0..o.days {
+            w.advance_day();
+            for (rule, n, first) in audit::summary(&audit::check(&w)) {
+                broke = true;
+                match rules.iter_mut().find(|r| r.0 == rule) {
+                    Some(r) => r.1 += n,
+                    None => rules.push((rule, n, format!("seed {seed} day {}: {first}", w.day.0))),
+                }
+            }
+        }
+        if !broke {
+            clean += 1;
+        }
+    }
+    println!("{clean}/{} seeds clean over {} days", o.seeds, o.days);
+    for (rule, n, first) in rules {
+        println!("{rule:<18} {n:>7} breach-days   first: {first}");
+    }
 }
 
 /// The sick pass: incidence and deaths by disease across seeds.

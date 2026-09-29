@@ -96,8 +96,11 @@ mod tests {
         assert!((daily_risk(&w, child) - 2.0 * fed).abs() < 1e-6);
     }
 
+    /// Frontier child deaths ran one in five to one in three. Ten seeds is
+    /// a small sample (46 children): across 40 seeds the rate sits near 18%,
+    /// and a single child either way moves the ten-seed figure two points.
     #[test]
-    fn about_one_in_ten_children_die_over_three_years() {
+    fn about_one_in_five_children_die_over_three_years() {
         let (mut kids, mut dead) = (0, 0);
         for seed in 1..=10 {
             let mut w = World::new(seed);
@@ -118,6 +121,6 @@ mod tests {
                 .count();
         }
         let rate = dead as f32 / kids as f32;
-        assert!((0.03..0.25).contains(&rate), "{dead}/{kids} = {rate}");
+        assert!((0.05..0.32).contains(&rate), "{dead}/{kids} = {rate}");
     }
 }

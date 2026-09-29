@@ -6,6 +6,7 @@
 pub mod action;
 pub mod arms;
 pub mod attribution;
+pub mod audit;
 pub mod bees;
 pub mod bison;
 pub mod calendar;

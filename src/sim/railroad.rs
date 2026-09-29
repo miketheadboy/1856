@@ -129,7 +129,8 @@ pub fn daily(world: &mut World) {
                 move_on(world, i as u16, Some(f));
             } else {
                 // One more at the table: food, and someone may notice.
-                world.families[f as usize].stores.food -= 1.0;
+                let pantry = &mut world.families[f as usize].stores.food;
+                *pantry = (*pantry - 1.0).max(0.0);
                 notice(world, i, f);
             }
         }

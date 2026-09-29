@@ -854,6 +854,11 @@ impl World {
             self.monthly();
         }
         self.run_cascades();
+        // Handlers add feeling freely (+25 fear for a warrant); the day ends
+        // with everyone back inside the 0..100 every reader assumes.
+        for n in &mut self.npcs {
+            n.emotions.clamp();
+        }
         let row = super::debug::snapshot(self);
         self.metrics.push(row);
     }

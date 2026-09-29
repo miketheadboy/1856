@@ -82,7 +82,7 @@ pub struct Warrants {
     /// deputies.
     pub lawful: Vec<EventId>,
     /// (accused, warrant, day): trials waiting on the justice.
-    trials: Vec<(NpcId, usize, Day)>,
+    pub(crate) trials: Vec<(NpcId, usize, Day)>,
     /// (warrant, who rides with the posse besides the leader).
     pub posse_riders: Vec<(usize, NpcId)>,
     /// You're in the timber until this day.
@@ -267,6 +267,19 @@ fn complain(world: &mut World, ev: &WorldEvent) {
 pub fn on_event(world: &mut World, ev: &WorldEvent) {
     match ev.kind {
         EventKind::Belief { .. } => complain(world, ev),
+        // A dead man's papers close and his cell empties the day he dies;
+        // otherwise the wanted list shows a corpse for two weeks.
+        EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => {
+            for w in &mut world.warrants.list {
+                if w.accused == victim && w.state == State::Open {
+                    w.state = State::Dead;
+                }
+            }
+            world
+                .warrants
+                .held
+                .retain(|h| h.0 != victim || h.2 == Held::Fled);
+        }
         EventKind::Warrant { accused, .. } => {
             let n = world.npc_mut(accused);
             n.emotions.fear += 25.0;
@@ -706,6 +719,10 @@ fn try_case(world: &mut World, accused: NpcId, i: usize, plea: f32) {
     let Some(judge) = justice(world) else {
         return;
     };
+    // No court tries a corpse.
+    if !world.npc(accused).alive {
+        return;
+    }
     let w = world.warrants.list[i].clone();
     let other = world.npc(accused).faction != world.npc(judge).faction;
     let mut p: f32 = if other { 0.75 } else { 0.3 };

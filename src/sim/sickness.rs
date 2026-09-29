@@ -285,7 +285,7 @@ pub fn founding(world: &mut World) {
     }
 }
 
-fn catch(world: &mut World, who: NpcId, d: Disease) -> bool {
+pub(crate) fn catch(world: &mut World, who: NpcId, d: Disease) -> bool {
     let n = world.npc(who);
     if !n.alive || world.sickness.has(who, d) || world.sickness.immune_to(who, d) {
         return false;
@@ -639,6 +639,7 @@ pub fn doctor(world: &mut World, family: FamilyId) -> bool {
                     world.npcs[p as usize].health -= 5;
                 }
             }
+            c.care = c.care.clamp(0.05, 2.0);
         }
         if !world.sickness.immune_to(p, Disease::Smallpox) {
             world.sickness.immune.push((p, Disease::Smallpox));
@@ -769,6 +770,11 @@ pub fn tend(world: &mut World) {
 }
 
 pub fn on_event(world: &mut World, ev: &WorldEvent) {
+    // The dead are off the sick list the day they die, not the next time
+    // the fever is walked round (the auditor caught them lingering).
+    if let EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } = ev.kind {
+        world.sickness.cases.retain(|c| c.who != victim);
+    }
     match ev.kind {
         EventKind::Cruelty {
             victim,

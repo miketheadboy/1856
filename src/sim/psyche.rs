@@ -26,7 +26,7 @@ pub struct Emotions {
 }
 
 impl Emotions {
-    fn clamp(&mut self) {
+    pub(crate) fn clamp(&mut self) {
         for v in [
             &mut self.fear,
             &mut self.anger,
