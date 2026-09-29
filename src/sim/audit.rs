@@ -7,7 +7,7 @@
 //! `check` is read-only and cheap enough to run every day of a test; the
 //! cross-system tests in `tests.rs` and `lab audit` run it across seeds.
 
-use super::events::{EventKind, MAX_CASCADE_DEPTH, Suspect};
+use super::events::{Cruelty, EventKind, MAX_CASCADE_DEPTH, Suspect};
 use super::wardrobe::{self, ITEMS};
 use super::warrant::{Held, State};
 use super::world::{NpcId, World};
@@ -80,6 +80,12 @@ pub fn check(world: &World) -> Vec<Breach> {
     wardrobe_(&mut b);
     hearts(&mut b);
     feuds(&mut b);
+    market(&mut b);
+    ghosts(&mut b);
+    standoff(&mut b);
+    law(&mut b);
+    railroad(&mut b);
+    gossip(&mut b);
     b.out
 }
 
@@ -464,6 +470,234 @@ fn feuds(b: &mut Books) {
         }
         if a as usize >= w.families.len() || c as usize >= w.families.len() {
             b.breach("feud-family", format!("feud {a}-{c} names no family"));
+        }
+    }
+}
+
+/// Dunmore's shelves: prices and stock stay real numbers.
+fn market(b: &mut Books) {
+    let m = &b.world.market;
+    for (g, st) in m.goods.iter().enumerate() {
+        if !st.stock.is_finite() || st.stock < -0.001 {
+            b.breach("market-stock", format!("good {g} stock {}", st.stock));
+        }
+        if !st.price.is_finite() || st.price <= 0.0 {
+            b.breach("market-price", format!("good {g} price {}", st.price));
+        }
+    }
+    for (name, v) in [("freight", m.freight_factor), ("trail", m.trail_safety)] {
+        if !v.is_finite() || v < 0.0 {
+            b.breach("market-range", format!("{name} {v}"));
+        }
+    }
+    for f in &b.world.families {
+        let a = &f.stores.arms;
+        if !a.lead.is_finite() || a.lead < -0.001 {
+            b.breach(
+                "arms-lead",
+                format!("the {}s hold {} lead", f.surname, a.lead),
+            );
+        }
+    }
+}
+
+/// Oaths against the graveyard: an open oath needs a living man to keep it
+/// and a living man to keep it on; a ghost needs to be dead.
+fn ghosts(b: &mut Books) {
+    let w = b.world;
+    for o in &w.ghosts.oaths {
+        if o.done || !b.exists("oath", o.holder) || !b.exists("oath", o.target) {
+            continue;
+        }
+        if o.holder == o.target {
+            b.breach("oath-self", format!("{} swore on himself", b.who(o.holder)));
+        }
+        if o.woke && !(w.npc(o.holder).alive && w.npc(o.target).alive) {
+            b.breach(
+                "oath-dead",
+                format!(
+                    "{}'s oath on {} is open with a dead man in it",
+                    b.who(o.holder),
+                    b.who(o.target)
+                ),
+            );
+        }
+    }
+    for h in &w.ghosts.haunts {
+        if b.exists("haunt", h.spirit) && w.npc(h.spirit).alive {
+            b.breach(
+                "haunt-living",
+                format!("{} haunts while alive", b.who(h.spirit)),
+            );
+        }
+    }
+}
+
+/// The standoff at the gate against the jail and the graveyard.
+fn standoff(b: &mut Books) {
+    let w = b.world;
+    let Some(s) = &w.action.standoff else { return };
+    if b.exists("standoff", s.actor) && !w.npc(s.actor).alive {
+        b.breach(
+            "standoff-dead",
+            format!("{} at the gate, dead", b.who(s.actor)),
+        );
+    }
+    for &r in &s.riders {
+        if b.exists("standoff", r) && (!w.npc(r).alive || b.held(r)) {
+            b.breach(
+                "standoff-rider",
+                format!("{} rides up from jail or grave", b.who(r)),
+            );
+        }
+    }
+    if let Some(i) = s.serving
+        && i >= w.warrants.list.len()
+    {
+        b.breach("standoff-paper", format!("serving missing paper {i}"));
+    }
+}
+
+/// The muster roll against the jail and the grave.
+fn law(b: &mut Books) {
+    let w = b.world;
+    if let Some((_, _, men)) = &w.law.muster {
+        for &m in men {
+            if b.exists("muster", m) && !w.npc(m).alive {
+                b.breach("muster-dead", format!("{} mustered dead", b.who(m)));
+            }
+        }
+    }
+    for d in &w.law.disputes {
+        if d.plaintiff as usize >= w.families.len() {
+            b.breach("dispute-family", format!("no family {}", d.plaintiff));
+        }
+        b.exists("dispute", d.defendant);
+    }
+}
+
+/// Freedom seekers: whose door, who's after them.
+fn railroad(b: &mut Books) {
+    let w = b.world;
+    let r = &w.railroad;
+    let n = r.seekers.len();
+    if let Some(i) = r.at_door
+        && i as usize >= n
+    {
+        b.breach("seeker-door", format!("seeker {i} at the door of {n}"));
+    }
+    for &(i, _, _) in &r.pursuit {
+        if i as usize >= n {
+            b.breach("seeker-pursuit", format!("pursuit of missing seeker {i}"));
+        }
+    }
+    for list in [&r.safe, &r.hostile] {
+        for &f in list {
+            if f as usize >= w.families.len() {
+                b.breach("seeker-family", format!("no family {f}"));
+            }
+        }
+    }
+    for s in &r.seekers {
+        for &id in &s.noticed_by {
+            b.exists("seeker-noticed", id);
+        }
+    }
+}
+
+/// Gossip against belief: people pass on only what they themselves believe,
+/// the dead don't talk (except as ghosts, by moonlight), nobody tells
+/// himself, and every telling lands on an event that already happened.
+/// Only today's tellings are read, so a daily audit stays linear.
+fn gossip(b: &mut Books) {
+    let w = b.world;
+    let today: Vec<_> = w
+        .events
+        .iter()
+        .rev()
+        .take_while(|e| e.day == w.day)
+        .filter(|e| matches!(e.kind, EventKind::Gossip { .. }))
+        .collect();
+    if today.is_empty() {
+        return;
+    }
+    let mut died = vec![u32::MAX; w.npcs.len()];
+    for e in &w.events {
+        if let EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } = e.kind
+            && let Some(d) = died.get_mut(victim as usize)
+        {
+            *d = (*d).min(e.id);
+        }
+    }
+    for e in today {
+        let EventKind::Gossip {
+            teller,
+            listener,
+            about,
+            blamed,
+        } = e.kind
+        else {
+            continue;
+        };
+        if !b.exists("gossip", teller) || !b.exists("gossip", listener) {
+            continue;
+        }
+        if teller == listener {
+            b.breach(
+                "gossip-self",
+                format!("#{}: {} told himself", e.id, b.who(teller)),
+            );
+        }
+        if about >= e.id {
+            b.breach("gossip-about", format!("#{} tells of later #{about}", e.id));
+            continue;
+        }
+        let ghost = w
+            .ghosts
+            .haunts
+            .iter()
+            .any(|h| h.spirit == teller && h.death == about);
+        if died[teller as usize] < e.id && !ghost {
+            b.breach(
+                "gossip-dead",
+                format!("#{}: the dead {} talked", e.id, b.who(teller)),
+            );
+        }
+        if died[listener as usize] < e.id {
+            b.breach(
+                "gossip-deaf",
+                format!("#{}: told the dead {}", e.id, b.who(listener)),
+            );
+        }
+        // What the teller says must be what the teller believes (or did,
+        // before changing his mind): a Belief of his own, earlier in the log.
+        // Ghosts speak the truth of their own deaths.
+        // Slander is a lie on purpose, told through the same mouths.
+        let slander = e.parent.is_some_and(|p| {
+            matches!(
+                w.events[p as usize].kind,
+                EventKind::Cruelty {
+                    act: Cruelty::Slander { .. },
+                    ..
+                }
+            )
+        });
+        let believed = ghost
+            || slander
+            || w.events[..e.id as usize].iter().any(|x| {
+                matches!(x.kind, EventKind::Belief { holder, about: a, blamed: bl, .. }
+                    if holder == teller && a == about && bl == blamed)
+            });
+        if !believed {
+            b.breach(
+                "gossip-unbelieved",
+                format!(
+                    "#{}: {} told {} a thing he never believed about #{about}",
+                    e.id,
+                    b.who(teller),
+                    b.who(listener)
+                ),
+            );
         }
     }
 }

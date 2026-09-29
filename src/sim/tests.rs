@@ -373,3 +373,81 @@ fn the_dead_leave_the_sick_list_the_day_they_die() {
     w.player_kill(who);
     assert!(!w.sickness.cases.iter().any(|c| c.who == who));
 }
+
+/// Gossip against attribution, across seeds. Three claims of the design:
+/// a rumor moves blame (a telling that never lands is a dead system) but
+/// doesn't dictate it (listeners weigh their own grudges, §11); what's
+/// passed mouth to mouth is wrong far more often than what was seen; and
+/// talk crosses the faction line, but less than it stays home.
+#[test]
+fn gossip_against_attribution() {
+    use super::events::Source;
+    let (mut told, mut carried) = (0, 0);
+    let (mut seen, mut seen_right, mut heard, mut heard_right) = (0, 0, 0, 0);
+    let (mut tellings, mut across) = (0, 0);
+    for seed in [1, 3, 5, 7] {
+        let mut w = World::new(seed);
+        w.run_days(400);
+        for e in &w.events {
+            match e.kind {
+                EventKind::Gossip {
+                    teller, listener, ..
+                } => {
+                    tellings += 1;
+                    if w.npc(teller).faction != w.npc(listener).faction {
+                        across += 1;
+                    }
+                }
+                EventKind::Belief {
+                    about,
+                    blamed,
+                    source,
+                    ..
+                } => {
+                    if let Some(p) = e.parent
+                        && let EventKind::Gossip { blamed: said, .. } = w.events[p as usize].kind
+                    {
+                        told += 1;
+                        carried += (said == blamed) as u32;
+                    }
+                    let truth = match w.events[about as usize].kind {
+                        EventKind::Fire { cause, .. } => cause.truth(),
+                        EventKind::Death {
+                            killer: Some(k), ..
+                        } => Suspect::Person(k),
+                        _ => continue,
+                    };
+                    match source {
+                        Source::Witnessed => {
+                            seen += 1;
+                            seen_right += (truth == blamed) as u32;
+                        }
+                        Source::Told(_) => {
+                            heard += 1;
+                            heard_right += (truth == blamed) as u32;
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let rate = |a: u32, n: u32| a as f32 / n.max(1) as f32;
+    let carry = rate(carried, told);
+    assert!(told > 200, "gossip barely lands: {told} beliefs");
+    assert!(
+        (0.2..0.8).contains(&carry),
+        "a rumor should sway, not dictate: {carried}/{told}"
+    );
+    assert!(heard > 100 && seen > 0, "{heard} heard, {seen} seen");
+    assert!(
+        rate(seen_right, seen) > rate(heard_right, heard) + 0.3,
+        "eyes {seen_right}/{seen} vs ears {heard_right}/{heard}"
+    );
+    let cross = rate(across, tellings);
+    assert!(
+        (0.1..0.5).contains(&cross),
+        "talk across the line: {across}/{tellings}"
+    );
+}
