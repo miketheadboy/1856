@@ -150,14 +150,15 @@ pub fn work(world: &mut World, family: FamilyId, hands: f32) -> Task {
                 hh.work.butchered = true;
                 let smoked =
                     hh.improvements.built & super::homestead::Improvement::Smokehouse.bit() != 0;
-                hh.food += if salted {
+                hh.goods[Good::Hides.index()] += 1.0;
+                let kept = if salted {
                     BUTCHER_FOOD
                 } else if smoked {
                     BUTCHER_FOOD * 0.8
                 } else {
                     BUTCHER_FOOD * 0.5
                 };
-                hh.goods[Good::Hides.index()] += 1.0;
+                super::larder::add_meat(world, family, kept);
             }
         }
         Task::Fences => {

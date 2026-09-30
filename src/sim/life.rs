@@ -577,7 +577,7 @@ fn trap(world: &mut World) -> bool {
     // Muskrat are small money; a beaver is a robe's worth.
     let hides = muskrat as f32 * 0.25 + beaver as f32 * 1.5;
     world.families[0].stores.goods[Good::Hides.index()] += hides;
-    world.families[0].stores.food += muskrat as f32 * 0.5;
+    super::larder::add_meat(world, 0, muskrat as f32 * 0.5);
     // Run the line far enough and you're on the reserve.
     if skill > 0.3 && world.rng.chance(0.08) {
         world.emit_root(
@@ -659,7 +659,7 @@ fn fish(world: &mut World) -> bool {
     let luck = world.npc(PLAYER).hidden.luck;
     let noise = world.rng.unit();
     let fish = ((1.0 + 8.0 * skill) * season * moon * luck * (0.4 + noise)).round();
-    world.families[0].stores.food += 2.0 * fish;
+    super::larder::add_meat(world, 0, 2.0 * fish);
     world.life.learn(Skill::Fishing, 2.0);
     world.life.cheer(6.0);
     family::leave_for(world, Errand::Fishing, 1);

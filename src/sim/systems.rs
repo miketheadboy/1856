@@ -53,6 +53,7 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::warrant::on_event(world, ev);
     super::wardrobe::on_event(world, ev);
     super::sickness::on_event(world, ev);
+    super::freight::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
@@ -779,9 +780,15 @@ pub fn resolve_plot(
     if !world.npc(actor).alive || !world.npc(target).alive || super::warrant::held(world, actor) {
         return None;
     }
-    // A man in the Lecompton jail or gone to the States isn't home to be
-    // shot; his barn still is.
-    if method == Retaliation::Ambush && super::warrant::held(world, target) {
+    // A man in the Lecompton jail, gone to the States or down the road
+    // with a wagon isn't home to be shot; his barn still is. A man on the
+    // road isn't here to ride on anybody.
+    if method == Retaliation::Ambush
+        && (super::warrant::held(world, target) || super::freight::away(world, target))
+    {
+        return None;
+    }
+    if super::freight::away(world, actor) {
         return None;
     }
     // Someone sat up with a rifle and called out at the fence.

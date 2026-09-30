@@ -27,6 +27,8 @@ pub enum Errand {
     Fled,
     /// Riding with a posse after a wanted man.
     Posse,
+    /// Gone to the river with the wagon (`freight`).
+    Freighting,
 }
 
 impl Errand {
@@ -41,6 +43,7 @@ impl Errand {
             Errand::Jail => 30,
             Errand::Fled => super::warrant::RUN_DAYS,
             Errand::Posse => 2,
+            Errand::Freighting => super::freight::Route::Westport.days(),
         }
     }
 
@@ -57,6 +60,8 @@ impl Errand {
             Errand::Jail => 0.8,
             Errand::Fled => 1.3,
             Errand::Posse => 0.7,
+            // Somebody has to fetch the coffee.
+            Errand::Freighting => 0.3,
         }
     }
 
@@ -71,6 +76,7 @@ impl Errand {
             Errand::Jail => "in the Lecompton jail",
             Errand::Fled => "gone to the States",
             Errand::Posse => "off with a posse",
+            Errand::Freighting => "gone to the river with the wagon",
         }
     }
 }

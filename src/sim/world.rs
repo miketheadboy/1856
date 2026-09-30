@@ -259,6 +259,8 @@ pub struct World {
     pub wardrobe: super::wardrobe::Wardrobe,
     /// Who's sick with what, who's immune, lice, fouled wells, epidemics.
     pub sickness: super::sickness::Sickness,
+    /// Wagons on the road to the river (`freight`).
+    pub freight: super::freight::Freight,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -378,7 +380,7 @@ impl World {
                     seed: acres,
                     acres,
                     cattle: rng.range(1, 7),
-                    oxen: rng.range(0, 3),
+                    oxen: rng.range(1, 4),
                     cash: rng.range(0, 25) as i32,
                     prudence: rng.unit(),
                     proud: rng.chance(0.3),
@@ -551,6 +553,7 @@ impl World {
             warrants: super::warrant::Warrants::default(),
             wardrobe: super::wardrobe::Wardrobe::default(),
             sickness: super::sickness::Sickness::default(),
+            freight: Default::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -569,6 +572,19 @@ impl World {
                 .filter(|n| n.family == f as FamilyId)
                 .count() as f32;
             world.families[f].stores.food = m * (120.0 + world.rng.range(0, 110) as f32);
+        }
+        // What came out on the wagon: side meat, a sack of coffee, a bolt
+        // of cloth, a keg of nails. No garden: the sod was broken too late
+        // in 1855 to plant one (`larder`).
+        for f in &mut world.families {
+            if f.store {
+                continue;
+            }
+            let hh = &mut f.stores;
+            hh.larder.meat_share = 0.25;
+            hh.goods[Good::Coffee.index()] = 6.0;
+            hh.goods[Good::Cloth.index()] = 3.0;
+            hh.goods[Good::Iron.index()] = 3.0;
         }
 
         // Old grudges from before the game starts: people mostly blame
@@ -859,6 +875,8 @@ impl World {
         history::daily(self);
         market::daily(self);
         economy::daily(self);
+        super::larder::daily(self);
+        super::freight::daily(self);
         psyche::daily(self);
         character::daily_evil(self);
         super::ghosts::daily(self);

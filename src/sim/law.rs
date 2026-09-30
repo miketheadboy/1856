@@ -546,7 +546,7 @@ fn close_muster(world: &mut World, i: usize) {
         .collect();
     let mut padded = std::mem::take(&mut world.law.padded).len() as u8;
     for v in lately_dead {
-        if world.rng.chance(0.15) {
+        if world.rng.chance(0.3) {
             world.emit_root(
                 EventKind::RollPadded {
                     name: v,

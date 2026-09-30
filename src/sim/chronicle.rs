@@ -715,6 +715,44 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 String::new()
             }
         ),
+        EventKind::WagonOut {
+            teamster,
+            route_west,
+            orders,
+        } => format!(
+            "[WAGON] {} hitched up for {}{}",
+            who(world, teamster),
+            if route_west {
+                "Westport"
+            } else {
+                "the Lane Trail"
+            },
+            if orders > 0 {
+                format!(", with orders from {orders} neighbors")
+            } else {
+                String::new()
+            }
+        ),
+        EventKind::WagonBack {
+            teamster,
+            tenths_of_a_ton,
+        } => format!(
+            "[WAGON] {} came home from the river with {:.1} ton",
+            who(world, teamster),
+            tenths_of_a_ton as f32 / 10.0
+        ),
+        EventKind::WagonStopped { teamster, seized } => format!(
+            "[WAGON] Missourians stopped {} on the Westport road and took the load (${seized})",
+            who(world, teamster)
+        ),
+        EventKind::ShortWeight {
+            teamster,
+            noticed_by,
+        } => format!(
+            "[WAGON] {} says the order {} brought back from the river came up light",
+            who(world, noticed_by),
+            who(world, teamster)
+        ),
         EventKind::Bigamy { bigamist, spouse } => format!(
             "[SCANDAL] A letter from the States: {} has a living {} back home. The marriage to {} is undone",
             who(world, bigamist),
@@ -1382,6 +1420,9 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
         EventKind::Prowler { seen, .. } => omniscient || seen > 0,
         EventKind::ArmsArrived { family, .. } => omniscient || family == 0,
         EventKind::HandTalked { .. } => omniscient,
+        EventKind::WagonOut { teamster, .. } | EventKind::WagonBack { teamster, .. } => {
+            omniscient || teamster == PLAYER
+        }
         // The captain's secret, until the roll is read.
         EventKind::RollPadded { .. } => omniscient,
         // Sickness in the county is known house by house, and loudly when

@@ -30,6 +30,8 @@
 //!   dress                    what the county wears, the looks, and whose colors
 //!   hands                    a watch at night and a hired hand, against nobody, over
 //!                            --seeds: riders turned back, fires, strays, timber
+//!   larder                   every table in the county: meat, garden, milk, coffee,
+//!                            cloth, water; and across --seeds, the wagons to the river
 //!   standing                 disparity: per 100 person-years, how often each band of
 //!                            standing is wrongly blamed, papered, convicted, jumped
 //!   audit                    every system's books against the others', every day,
@@ -125,6 +127,7 @@ fn main() {
         "dress" => dress_lens(&o),
         "audit" => audit_lens(&o),
         "standing" => standing_lens(&o),
+        "larder" => larder_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
@@ -186,6 +189,55 @@ fn law_lens(o: &Opts) {
         l.shot_by_law,
         l.law_shot,
         l.bounties_paid
+    );
+}
+
+/// The county's tables on one day, then the river trade across seeds.
+fn larder_lens(o: &Opts) {
+    use bleeding_kansas::sim::{freight, larder};
+    let mut w = World::new(o.seed);
+    w.run_days(o.days);
+    println!("seed {} on {}:", o.seed, w.day);
+    for f in &w.families {
+        if f.store || w.head_of(f.id).is_none() {
+            continue;
+        }
+        println!("  {:<10} {}", f.surname, larder::describe(&w, f.id));
+    }
+    for line in freight::describe(&w) {
+        println!("  on the road: {line}");
+    }
+    let (mut out, mut back, mut stopped, mut short, mut lane, mut scurvy) = (0, 0, 0, 0, 0, 0);
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        for e in &w.events {
+            match e.kind {
+                EventKind::WagonOut { route_west, .. } => {
+                    out += 1;
+                    lane += (!route_west) as u32;
+                }
+                EventKind::WagonBack { .. } => back += 1,
+                EventKind::WagonStopped { .. } => stopped += 1,
+                EventKind::ShortWeight { .. } => short += 1,
+                EventKind::FellSick {
+                    disease: bleeding_kansas::sim::sickness::Disease::Scurvy,
+                    ..
+                } => scurvy += 1,
+                _ => {}
+            }
+        }
+    }
+    let n = o.seeds as f32;
+    println!(
+        "\nper seed over {} days: {:.1} wagons out ({:.1} by the Lane Trail), {:.1} home, {:.1} stopped by Missourians, {:.1} short weights; {:.1} down with scurvy",
+        o.days,
+        out as f32 / n,
+        lane as f32 / n,
+        back as f32 / n,
+        stopped as f32 / n,
+        short as f32 / n,
+        scurvy as f32 / n
     );
 }
 

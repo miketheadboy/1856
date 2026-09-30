@@ -9,9 +9,11 @@ use bleeding_kansas::sim::civic::Project;
 use bleeding_kansas::sim::economy::Choice;
 use bleeding_kansas::sim::family;
 use bleeding_kansas::sim::farmwork;
+use bleeding_kansas::sim::freight::{self, Route};
 use bleeding_kansas::sim::hands::{self, COMPANIES, Task};
 use bleeding_kansas::sim::homestead::{self, Improvement};
 use bleeding_kansas::sim::intrigue;
+use bleeding_kansas::sim::larder;
 use bleeding_kansas::sim::law;
 use bleeding_kansas::sim::life::Activity;
 use bleeding_kansas::sim::market::Good;
@@ -62,6 +64,10 @@ pub enum Sub {
     Sick,
     /// One sick person: what to give them.
     Tend(NpcId),
+    /// Dunmore's grocery shelf: coffee, sugar, bacon, cloth, nails.
+    Groceries,
+    /// Hitch up for the river.
+    Wagon,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -122,6 +128,8 @@ pub enum Cmd {
     GatherHerbs,
     Delouse,
     Quarantine(bool),
+    /// Take the wagon to the river by this road.
+    Haul(Route),
     /// A blanket out of a lousy house.
     FoulBlanket(NpcId),
     /// Go through the fallen man's pockets.
@@ -453,6 +461,23 @@ pub fn run(world: &mut World, cmd: Cmd) -> Outcome {
                 )
             });
         }
+        Cmd::Haul(route) => {
+            let today = world.day;
+            if world.life.acted_on == Some(today) || family::away(world).is_some() {
+                return toast("Not today.");
+            }
+            let cash = world.families[0].stores.cash;
+            if !freight::set_out(world, 0, route, cash) {
+                return toast("No team to pull it, or no money to spend.");
+            }
+            world.life.acted_on = Some(today);
+            let line = format!(
+                "You hitch up for {}. Back in {} days, God willing.",
+                route.label(),
+                route.days()
+            );
+            return toast(&line);
+        }
         Cmd::Delouse => {
             if !sickness::delouse(world) {
                 return toast("Not today.");
@@ -648,7 +673,10 @@ pub fn menu(world: &World, sub: Sub) -> MenuSpec {
                     };
                     when(label, Cmd::Do(Activity::Improve(imp)), free && !built)
                 })
-                .chain([item("Not today", Cmd::Close)])
+                .chain([
+                    item("Hitch the wagon...", Cmd::Open(Sub::Wagon)),
+                    item("Not today", Cmd::Close),
+                ])
                 .collect();
             MenuSpec::new(
                 "Build",
@@ -698,6 +726,7 @@ pub fn menu(world: &World, sub: Sub) -> MenuSpec {
                         format!("Buy bar lead, 5 lb: ${}", arms::LEAD_PRICE),
                         Cmd::BuyLead,
                     ),
+                    item("Groceries and hardware...", Cmd::Open(Sub::Groceries)),
                     item("Dry goods...", Cmd::Open(Sub::Clothes)),
                     item("Physic...", Cmd::Open(Sub::Medicines)),
                     item("Sell...", Cmd::Open(Sub::StoreSell)),
@@ -931,6 +960,77 @@ pub fn menu(world: &World, sub: Sub) -> MenuSpec {
             )
         }
         Sub::Sick => sick_menu(world),
+        Sub::Groceries => {
+            let m = &world.market;
+            let cash = world.families[0].stores.cash;
+            let line = |g: Good| format!("{} ${:.2}/{}", g.label(), m.price(g), g.unit());
+            MenuSpec::new(
+                "Dunmore's shelf",
+                format!("{}. You have ${cash}.", larder::describe(world, 0)),
+                vec![
+                    item(
+                        format!("Coffee, 4 lb: {}", line(Good::Coffee)),
+                        Cmd::Buy(Good::Coffee, 4.0),
+                    ),
+                    item(
+                        format!("Sugar, 5 lb: {}", line(Good::Sugar)),
+                        Cmd::Buy(Good::Sugar, 5.0),
+                    ),
+                    item(
+                        format!("Side bacon, 20 lb: {}", line(Good::Bacon)),
+                        Cmd::Buy(Good::Bacon, 20.0),
+                    ),
+                    item(
+                        format!("Cloth, 4 yd: {}", line(Good::Cloth)),
+                        Cmd::Buy(Good::Cloth, 4.0),
+                    ),
+                    item(
+                        format!("Nails and iron, 5 lb: {}", line(Good::Iron)),
+                        Cmd::Buy(Good::Iron, 5.0),
+                    ),
+                    item("Back", Cmd::Open(Sub::Store)),
+                ],
+            )
+        }
+        Sub::Wagon => {
+            let h = &world.families[0].stores;
+            let team = h.oxen >= 2;
+            let free = world.life.acted_on != Some(world.day) && family::away(world).is_none();
+            let mut items: Vec<Item> = Route::ALL
+                .into_iter()
+                .map(|r| {
+                    let risk = freight::stop_odds(world, bleeding_kansas::sim::PLAYER, r);
+                    let warn = if risk >= 0.3 {
+                        ", and the Missourians are stopping wagons"
+                    } else {
+                        ""
+                    };
+                    when(
+                        format!(
+                            "{}: {} days, coffee ${:.2}/lb{warn}",
+                            r.label(),
+                            r.days(),
+                            freight::river_price(Good::Coffee, r)
+                        ),
+                        Cmd::Haul(r),
+                        team && free,
+                    )
+                })
+                .collect();
+            items.push(item("Not now", Cmd::Close));
+            MenuSpec::new(
+                "The wagon",
+                if team {
+                    format!(
+                        "A ton to the load. The neighbors will send orders. You have ${}.",
+                        h.cash
+                    )
+                } else {
+                    "One ox won't pull a loaded wagon. You need a yoke.".to_string()
+                },
+                items,
+            )
+        }
         Sub::Tend(id) => {
             let chest = world.families[0].stores.medicine;
             let mut items: Vec<Item> = Remedy::ALL

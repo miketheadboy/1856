@@ -721,3 +721,53 @@ fn a_letter_from_the_states_undoes_a_bigamous_marriage() {
     assert!(w.hearts.bigamous.is_empty());
     assert!(super::audit::check(&w).is_empty());
 }
+
+/// The river shut is a coffee famine at Dunmore's: the store runs down on
+/// what the wagons don't bring, and the price climbs (`market`, `larder`).
+#[test]
+fn a_shut_river_is_a_coffee_famine() {
+    use super::market::Good;
+    let price_after = |shut: bool| {
+        let mut w = World::new(12);
+        for _ in 0..70 {
+            if shut {
+                w.market.freight_factor = 0.3;
+            }
+            w.advance_day();
+        }
+        (w.market.price(Good::Coffee), w.market.stock(Good::Coffee))
+    };
+    let (open_price, open_stock) = price_after(false);
+    let (shut_price, shut_stock) = price_after(true);
+    assert!(
+        shut_stock < open_stock,
+        "stock {shut_stock} vs {open_stock}"
+    );
+    assert!(
+        shut_price > open_price,
+        "price {shut_price} vs {open_price}"
+    );
+}
+
+/// Both of them left someone back east: one letter undoes the marriage, and
+/// neither lie outlives it.
+#[test]
+fn when_both_are_bigamists_one_letter_undoes_it() {
+    let mut w = World::new(9);
+    let a = w.add_npc(2, "Jacob", 30);
+    let b = w.add_npc(4, "Temperance", 25);
+    w.hearts.back_east.extend([a, b]);
+    w.emit_root(EventKind::Marriage { a, b }, None);
+    w.run_cascades();
+    assert_eq!(w.hearts.bigamous.len(), 2);
+    w.emit_root(
+        EventKind::Bigamy {
+            bigamist: a,
+            spouse: b,
+        },
+        None,
+    );
+    w.run_cascades();
+    assert!(w.hearts.bigamous.is_empty());
+    assert!(super::audit::check(&w).is_empty());
+}

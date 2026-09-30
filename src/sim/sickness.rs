@@ -359,7 +359,6 @@ fn onsets(world: &mut World, month: u32) {
         }
         let well = homestead::has(world, f, Improvement::Well);
         let fouled = world.sickness.fouled.iter().any(|x| x.0 == f);
-        let cellar = homestead::has(world, f, Improvement::Cellar);
         let hungry = world.families[f as usize].stores.hungry_days > 0;
         let low = bottoms(world, f);
         let rags = people
@@ -391,7 +390,16 @@ fn onsets(world: &mut World, month: u32) {
                 risks.push((Disease::Ague, if low { 0.004 } else { 0.0012 }));
             }
             if (7..=9).contains(&month) {
-                let water = if well { 0.4 } else { 1.0 };
+                // A creek gone to warm mud in a dry August is worst.
+                let water = if well {
+                    0.4
+                } else if super::larder::water(world, f) == super::larder::Water::Creek
+                    && super::larder::creek_low(world)
+                {
+                    1.6
+                } else {
+                    1.0
+                };
                 risks.push((
                     Disease::Flux,
                     0.0012 * water * if hungry { 2.0 } else { 1.0 },
@@ -413,8 +421,9 @@ fn onsets(world: &mut World, month: u32) {
             if lousy {
                 risks.push((Disease::Typhus, 0.0006));
             }
-            if (2..=4).contains(&month) && !cellar && (hungry || rags > 0.6) {
-                risks.push((Disease::Scurvy, 0.002));
+            // No potato, no turnip, no greens since the fall: the gums go.
+            if (2..=5).contains(&month) && !super::larder::greens(world, f) {
+                risks.push((Disease::Scurvy, if hungry { 0.0015 } else { 0.0005 }));
             }
             // Out in it in rags: the grown ones work outside, the children
             // are kept by the stove.

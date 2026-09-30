@@ -435,6 +435,28 @@ pub enum EventKind {
         /// `joined + padded`.
         padded: u8,
     },
+    /// Hitched up for the river: Westport or the Lane Trail, with this many
+    /// neighbors' orders aboard (`freight`).
+    WagonOut {
+        teamster: NpcId,
+        route_west: bool,
+        orders: u8,
+    },
+    /// Home from the river with the load.
+    WagonBack {
+        teamster: NpcId,
+        tenths_of_a_ton: u8,
+    },
+    /// Missourians on the Westport road took a Free-State wagon's load.
+    WagonStopped {
+        teamster: NpcId,
+        seized: u16,
+    },
+    /// A neighbor's order came back light: the teamster kept some.
+    ShortWeight {
+        teamster: NpcId,
+        noticed_by: NpcId,
+    },
     /// A letter from back home: the bigamist's first spouse is alive. The
     /// marriage here is undone.
     Bigamy {

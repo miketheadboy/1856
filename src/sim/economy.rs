@@ -66,6 +66,8 @@ pub struct Household {
     pub arms: super::arms::Armory,
     /// Doses in the medicine chest, by `sickness::Remedy`.
     pub medicine: [u8; super::sickness::MEDS],
+    /// What the food is made of, and the coffee (`larder`).
+    pub larder: super::larder::Larder,
 }
 
 impl Household {
@@ -124,18 +126,13 @@ pub fn daily(world: &mut World) {
         if winter {
             // Quilts from a winter's bees keep a house warmer.
             let quilts = world.gatherings.quilts(family).min(3) as f32;
-            let cellar =
-                if super::homestead::has(world, family, super::homestead::Improvement::Cellar) {
-                    0.1
-                } else {
-                    0.0
-                };
             need += 0.3 * m * world.winter_severity * (1.0 - 0.1 * quilts);
-            need *= 1.0 - cellar;
         }
         if weather.blizzard {
             need += 0.4 * m;
         }
+        // Roots off the cellar shelf spare the corn (`larder`).
+        need = (need - super::larder::eat_garden(world, family, m)).max(0.0);
         let hh = &mut world.families[f].stores;
         hh.food -= need;
         let starving = hh.food <= 0.0;
@@ -319,15 +316,15 @@ fn buy(world: &mut World, family: FamilyId) -> bool {
 fn butcher(world: &mut World, family: FamilyId, meat: f32) {
     let salted = market::consume(world, family, Good::Salt);
     let smoked = super::homestead::has(world, family, super::homestead::Improvement::Smokehouse);
-    let hh = &mut world.families[family as usize].stores;
-    hh.food += if salted {
+    let kept = if salted {
         meat
     } else if smoked {
         meat * 0.8
     } else {
         meat * 0.5
     };
-    hh.goods[Good::Hides.index()] += 1.0;
+    super::larder::add_meat(world, family, kept);
+    world.families[family as usize].stores.goods[Good::Hides.index()] += 1.0;
 }
 
 /// Try one way out. Returns whether it produced food (or was at least tried

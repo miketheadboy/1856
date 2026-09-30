@@ -328,10 +328,13 @@ pub fn labor(world: &World, family: u32) -> f32 {
                 * sick
         })
         .collect();
+    // Hog and hominy, or hominy alone; and a day a week with the water
+    // barrel (`larder`).
+    let fed = super::larder::fed_for_work(world, family);
     if hands.is_empty() {
-        0.2
+        0.2 * fed
     } else {
-        hands.iter().sum::<f32>() / 2.0
+        hands.iter().sum::<f32>() / 2.0 * fed
     }
 }
 

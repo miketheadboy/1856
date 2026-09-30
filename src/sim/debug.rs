@@ -188,6 +188,16 @@ pub fn explain_npc(world: &World, id: NpcId) -> String {
         scars
     );
     let _ = writeln!(s, "STANDING  {}", super::standing::describe(world, id));
+    let _ = writeln!(
+        s,
+        "TABLE     {}{}",
+        super::larder::describe(world, n.family),
+        if super::freight::away(world, id) {
+            "  (on the road to the river)"
+        } else {
+            ""
+        }
+    );
     let papers = super::warrant::wanted(world, id);
     let hand = world.hands.hired.iter().find(|h| h.npc == id);
     if !papers.is_empty() || super::warrant::held(world, id) || hand.is_some() {

@@ -87,6 +87,7 @@ pub fn check(world: &World) -> Vec<Breach> {
     railroad(&mut b);
     gossip(&mut b);
     lies(&mut b);
+    wagons(&mut b);
     b.out
 }
 
@@ -762,6 +763,56 @@ fn lies(b: &mut Books) {
             b.breach(
                 "wound-witnessed",
                 format!("#{} saw a bedside death happen", e.id),
+            );
+        }
+    }
+}
+
+/// Wagons on the road against the jail, the barn and the calendar; the
+/// larder against its own sums.
+fn wagons(b: &mut Books) {
+    let w = b.world;
+    let mut seen: Vec<NpcId> = Vec::new();
+    for t in &w.freight.trips {
+        if !b.exists("wagon", t.teamster) {
+            continue;
+        }
+        if seen.contains(&t.teamster) {
+            b.breach(
+                "wagon-twice",
+                format!("{} drives two wagons", b.who(t.teamster)),
+            );
+        }
+        seen.push(t.teamster);
+        if t.back < w.day {
+            b.breach(
+                "wagon-late",
+                format!("{} never came home", b.who(t.teamster)),
+            );
+        }
+        if w.warrants
+            .held
+            .iter()
+            .any(|h| h.0 == t.teamster && h.2 == Held::Jail)
+        {
+            b.breach(
+                "wagon-jailed",
+                format!("{} drives from jail", b.who(t.teamster)),
+            );
+        }
+    }
+    for f in &w.families {
+        let l = &f.stores.larder;
+        if !(0.0..=1.0).contains(&l.meat_share) {
+            b.breach(
+                "larder-meat",
+                format!("the {}s' meat share {}", f.surname, l.meat_share),
+            );
+        }
+        if !l.garden.is_finite() || l.garden < -0.01 {
+            b.breach(
+                "larder-garden",
+                format!("the {}s' garden {}", f.surname, l.garden),
             );
         }
     }

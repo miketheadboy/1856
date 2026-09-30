@@ -257,6 +257,12 @@ fn bigamy_out(world: &mut World, bigamist: NpcId, spouse: NpcId) {
         return;
     };
     let (_, _, moved, went_from) = world.hearts.bigamous.remove(i);
+    // Both of them may have left someone in the States; the marriage is
+    // undone for both lies at once (the auditor caught Temperance Bell's
+    // lie outliving the wedding it was about).
+    world.hearts.bigamous.retain(|&(x, y, _, _)| {
+        !((x == spouse && y == bigamist) || (x == bigamist && y == spouse))
+    });
     world.hearts.back_east.retain(|&x| x != bigamist);
     world
         .hearts
