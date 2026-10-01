@@ -38,6 +38,86 @@ impl Scenes {
     }
 }
 
+/// Every moment that can have a painted plate, by the file name it looks for.
+pub const PLATES: [&str; 16] = [
+    "end",
+    "bounty",
+    "law",
+    "door",
+    "riders_torch",
+    "riders_rifle",
+    "fallen",
+    "paper",
+    "knock",
+    "petition",
+    "muster",
+    "election",
+    "bee",
+    "letter",
+    "grave",
+    "wagon",
+];
+
+/// Painted plates found under `assets/plates/`: `<name>.png`, or a boil of
+/// `<name>_1.png`, `<name>_2.png`, ... cycled like hand-drawn line.
+#[derive(Resource)]
+pub struct Plates {
+    frames: Vec<(&'static str, Vec<Handle<Image>>)>,
+    /// Showing now, and since when (seconds).
+    showing: Option<(&'static str, f32)>,
+}
+
+impl FromWorld for Plates {
+    fn from_world(world: &mut bevy::ecs::world::World) -> Self {
+        let assets = world.resource::<AssetServer>();
+        let mut frames = Vec::new();
+        for name in PLATES {
+            let mut f: Vec<Handle<Image>> = (1..=8)
+                .map(|i| format!("plates/{name}_{i}.png"))
+                .take_while(|p| crate::asset_exists(p))
+                .map(|p| assets.load(p))
+                .collect();
+            if f.is_empty() && crate::asset_exists(&format!("plates/{name}.png")) {
+                f.push(assets.load(format!("plates/{name}.png")));
+            }
+            if !f.is_empty() {
+                frames.push((name, f));
+            }
+        }
+        Plates {
+            frames,
+            showing: None,
+        }
+    }
+}
+
+impl Plates {
+    fn get(&self, name: &str) -> Option<&Vec<Handle<Image>>> {
+        self.frames.iter().find(|p| p.0 == name).map(|p| &p.1)
+    }
+}
+
+/// The light a plate is seen by: moonlight for what comes after dark,
+/// lamplight for the house, cold for the grave, paper for the rest.
+pub fn plate_tint(name: &str) -> Color {
+    match name {
+        "knock" | "riders_torch" | "riders_rifle" | "law" | "door" | "fallen" => {
+            Color::srgb(0.74, 0.80, 0.92)
+        }
+        "letter" | "bee" | "petition" => Color::srgb(1.0, 0.88, 0.70),
+        "grave" | "end" => Color::srgb(0.80, 0.80, 0.78),
+        _ => Color::srgb(0.95, 0.90, 0.80),
+    }
+}
+
+/// Seconds for the slow push to reach its end; frames a second for a boil.
+const PUSH_SECONDS: f32 = 24.0;
+const PUSH_SCALE: f32 = 0.06;
+const BOIL_FPS: f32 = 6.0;
+
+#[derive(Component)]
+pub struct ScenePlate;
+
 #[derive(Component)]
 pub struct SceneRoot;
 #[derive(Component)]
@@ -64,6 +144,23 @@ pub fn setup(mut commands: Commands, fonts: Res<Fonts>) {
             SceneRoot,
         ))
         .with_children(|s| {
+            // The painted plate, under everything else in the frame.
+            s.spawn((
+                ImageNode {
+                    color: Color::NONE,
+                    ..default()
+                },
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    right: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    bottom: Val::Px(0.0),
+                    ..default()
+                },
+                UiTransform::default(),
+                ScenePlate,
+            ));
             // Letterbox.
             s.spawn((
                 Node {
@@ -76,6 +173,11 @@ pub fn setup(mut commands: Commands, fonts: Res<Fonts>) {
             s.spawn((
                 Text::new(""),
                 text(&fonts.display, 34.0, LIGHT),
+                // Over a pale plate the title needs ink under it.
+                TextShadow {
+                    offset: Vec2::new(2.0, 2.0),
+                    color: Color::srgba(0.05, 0.04, 0.03, 0.9),
+                },
                 Node {
                     margin: UiRect::top(Val::Px(18.0)),
                     ..default()
@@ -108,6 +210,9 @@ struct Moment {
     key: String,
     title: String,
     art: Handle<Image>,
+    /// The painted plate for this moment, if one's been drawn
+    /// (`assets/plates/<plate>.png`, docs/ART.md).
+    plate: &'static str,
     spec: MenuSpec,
 }
 
@@ -122,6 +227,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                 key,
                 title: "Knocking on heaven's door".into(),
                 art: art.cross.clone(),
+                plate: "end",
                 spec: MenuSpec::new(
                     "It's over for you",
                     "The county goes on without you, which it was always going to do. Somebody will tell it wrong in the paper.",
@@ -205,12 +311,20 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                     "Stand aside",
                 )
             };
+            let plate = match (paper.is_some(), s.yours, s.method) {
+                (true, true, _) => "bounty",
+                (true, false, _) => "law",
+                (false, true, _) => "door",
+                (false, false, Retaliation::Arson) => "riders_torch",
+                (false, false, Retaliation::Ambush) => "riders_rifle",
+            };
             let woman = bleeding_kansas::sim::world::is_woman(&name);
             let body = crate::panels::gendered(&body, woman);
             return Some(Moment {
                 key,
                 title,
                 art: art.gunman.clone(),
+                plate,
                 spec: MenuSpec::new(
                     name,
                     body,
@@ -262,6 +376,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                 key,
                 title: "Down".into(),
                 art: art.gunman.clone(),
+                plate: "fallen",
                 spec: MenuSpec::new(
                     name,
                     body,
@@ -294,6 +409,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                 key,
                 title: "A paper with your name on it".into(),
                 art: art.office.clone(),
+                plate: "paper",
                 spec: MenuSpec::new(
                     format!("Wanted: ${}", w.bounty),
                     format!(
@@ -313,6 +429,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                 key,
                 title: "A knock after dark".into(),
                 art: art.woman.clone(),
+                plate: "knock",
                 spec: MenuSpec::new(
                     format!("{}, from {}", s.name, s.from),
                     "Wet to the knees from the creek, and not asking for much: a loft, a day, a direction. The law of this Territory says you owe the county a name. The law says a great many things.",
@@ -329,6 +446,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                 key,
                 title: "Dunmore's petition".into(),
                 art: art.store.clone(),
+                plate: "petition",
                 spec: MenuSpec::new(
                     format!("{} holds your note", world.name(c)),
                     format!(
@@ -355,6 +473,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                 key,
                 title: "The muster is called".into(),
                 art: art.rifles.clone(),
+                plate: "muster",
                 spec: MenuSpec::new(
                     m.name,
                     "Men at the gate with rifles and a list. Your name is on the list. So is everybody's; that's what a list is for.",
@@ -394,6 +513,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                 key,
                 title: "Election day".into(),
                 art: art.ballot.clone(),
+                plate: "election",
                 spec: MenuSpec::new(
                     format!("The vote on {}", e.name),
                     if sell {
@@ -416,6 +536,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                 key,
                 title: format!("A {} tonight", bee.label()),
                 art: art.barn.clone(),
+                plate: "bee",
                 spec: MenuSpec::new(
                     format!("At the {} place", world.families[*host as usize].surname),
                     "Lanterns, a fiddle, people from both sides of the line being civil on account of the food.",
@@ -446,6 +567,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                     key: format!("letter {}", e.id),
                     title: "A letter".into(),
                     art: art.letter.clone(),
+                    plate: "letter",
                     spec: MenuSpec::new(
                         "From the States",
                         body,
@@ -460,6 +582,7 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
                     key: format!("death {}", e.id),
                     title: "Knocking on heaven's door".into(),
                     art: art.cross.clone(),
+                    plate: "grave",
                     spec: MenuSpec::new(
                         world.name(victim).to_string(),
                         "You dig in ground that doesn't want digging, and say what words you have. The prairie doesn't stop for it.",
@@ -477,10 +600,12 @@ fn next_moment(world: &World, scenes: &mut Scenes, art: &Art) -> Option<Moment> 
 pub fn run(
     sim: Res<Sim>,
     art: Res<Art>,
+    time: Res<Time>,
+    mut plates: ResMut<Plates>,
     mut scenes: ResMut<Scenes>,
     mut menu: ResMut<Menu>,
     mut root: Query<&mut Node, With<SceneRoot>>,
-    mut img: Query<&mut ImageNode, With<SceneArt>>,
+    mut img: Query<&mut ImageNode, (With<SceneArt>, Without<ScenePlate>)>,
     mut title: Query<&mut Text, With<SceneTitle>>,
     game: Res<crate::duel::Game>,
     state: Res<State<crate::Screen>>,
@@ -515,12 +640,47 @@ pub fn run(
         spec.items.push(item("Go on", Cmd::Close));
     }
     node.display = Display::Flex;
+    let painted = plates.get(m.plate).is_some();
+    plates.showing = painted.then_some((m.plate, time.elapsed_secs()));
     if let Ok(mut i) = img.single_mut() {
         i.image = m.art;
-        i.color = Color::srgb(0.93, 0.89, 0.80);
+        // A painted plate takes the frame; the little engraving steps aside.
+        i.color = if painted {
+            Color::NONE
+        } else {
+            Color::srgb(0.93, 0.89, 0.80)
+        };
     }
     if let Ok(mut t) = title.single_mut() {
         **t = crate::panels::plain(&m.title);
     }
     menu.open_scene(spec);
+}
+
+/// The plate breathes: a slow push in, a drift, and the line boiling if the
+/// plate has frames. Hidden whenever the scene is.
+pub fn plate(
+    time: Res<Time>,
+    scenes: Res<Scenes>,
+    plates: Res<Plates>,
+    mut q: Query<(&mut ImageNode, &mut UiTransform), With<ScenePlate>>,
+) {
+    let Ok((mut img, mut tf)) = q.single_mut() else {
+        return;
+    };
+    let Some((name, since)) = plates.showing.filter(|_| scenes.showing) else {
+        img.color = Color::NONE;
+        return;
+    };
+    let Some(frames) = plates.get(name) else {
+        return;
+    };
+    let t = time.elapsed_secs() - since;
+    let i = (t * BOIL_FPS) as usize % frames.len();
+    img.image = frames[i].clone();
+    img.color = plate_tint(name);
+    let push = (t / PUSH_SECONDS).min(1.0);
+    let ease = push * push * (3.0 - 2.0 * push);
+    tf.scale = Vec2::splat(1.0 + PUSH_SCALE * ease);
+    tf.translation = Val2::px(-6.0 * ease, -3.0 * ease);
 }

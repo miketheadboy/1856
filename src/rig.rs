@@ -5,9 +5,12 @@
 //! and the dead go down in a heap. Old wounds show: a stiff gun arm droops
 //! and shakes, a bad leg stands crooked. Clothes come off the outfit.
 //!
-//! Placeholder art: every part is a rounded slab in the outfit's colors. The
-//! skeleton, the solvers and the motion are the real thing; drawn parts drop
-//! in over the same bones later (docs/PLAN.md, the art pipeline).
+//! Art: every part has a name. If `assets/rig/<name>.png` exists it's drawn
+//! between the part's two joints (first joint at the top center of the
+//! image, second at the bottom center, width from the image's aspect),
+//! tinted by the outfit: white fills take the coat's color, black ink stays
+//! black. Parts with no file stay rounded slabs in the outfit's colors, so
+//! art can land one limb at a time (docs/ART.md).
 //!
 //! Screen space throughout: stage pixels, y down, angles by `atan2(dy, dx)`.
 
@@ -31,6 +34,11 @@ pub struct Piece {
     pub color: Color,
     /// Round ends (limbs) or square (hat brim, belt).
     pub round: bool,
+    /// The art file this part looks for (`assets/rig/<name>.png`).
+    pub name: &'static str,
+    /// Where drawn art hangs, top joint then bottom joint, when that isn't
+    /// `a` to `b` (a head is drawn crown to chin, a boot ankle to sole).
+    pub span: Option<(Vec2, Vec2)>,
 }
 
 impl Piece {
@@ -41,12 +49,78 @@ impl Piece {
             thick,
             color,
             round: true,
+            name: "",
+            span: None,
         }
     }
 
     fn square(mut self) -> Self {
         self.round = false;
         self
+    }
+
+    fn named(mut self, name: &'static str) -> Self {
+        self.name = name;
+        self
+    }
+
+    fn spanning(mut self, top: Vec2, bottom: Vec2) -> Self {
+        self.span = Some((top, bottom));
+        self
+    }
+}
+
+/// Every part the art can replace, in the names the files use.
+pub const ART_PARTS: [&str; 22] = [
+    "upper_arm_l",
+    "forearm_l",
+    "hand_l",
+    "skirt",
+    "thigh_r",
+    "shin_r",
+    "thigh_l",
+    "shin_l",
+    "boot_r",
+    "boot_l",
+    "torso",
+    "neck",
+    "head",
+    "head_woman",
+    "hat",
+    "rifle",
+    "upper_arm_r",
+    "forearm_r",
+    "hand_r",
+    "belt",
+    "holster",
+    "knife",
+];
+
+/// The drawn parts found under `assets/rig/`, loaded at startup.
+#[derive(Resource)]
+pub struct RigArt {
+    pub parts: Vec<(&'static str, Handle<Image>)>,
+}
+
+impl RigArt {
+    fn get(&self, name: &str) -> Option<&Handle<Image>> {
+        self.parts.iter().find(|p| p.0 == name).map(|p| &p.1)
+    }
+
+    pub fn has(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
+}
+
+impl FromWorld for RigArt {
+    fn from_world(world: &mut bevy::ecs::world::World) -> Self {
+        let assets = world.resource::<AssetServer>();
+        let parts = ART_PARTS
+            .into_iter()
+            .filter(|n| crate::asset_exists(&format!("rig/{n}.png")))
+            .map(|n| (n, assets.load(format!("rig/{n}.png"))))
+            .collect();
+        RigArt { parts }
     }
 }
 
@@ -292,38 +366,59 @@ pub fn pose(b: &Build, dr: &Drive, dress: &Dress) -> Vec<Piece> {
     let coat = dress.coat.unwrap_or(dress.shirt);
     let mut v = Vec::with_capacity(PARTS);
     // Back arm, legs, body, front arm: draw order is list order.
-    v.push(Piece::new(shoulder_l, elbow_l, 9.0, coat));
-    v.push(Piece::new(elbow_l, hand_l, 8.0, coat));
-    v.push(Piece::new(
-        hand_l,
-        hand_l + (hand_l - elbow_l).normalize_or(Vec2::Y) * 3.0,
-        6.0,
-        SKIN,
-    ));
+    v.push(Piece::new(shoulder_l, elbow_l, 9.0, coat).named("upper_arm_l"));
+    v.push(Piece::new(elbow_l, hand_l, 8.0, coat).named("forearm_l"));
+    v.push(
+        Piece::new(
+            hand_l,
+            hand_l + (hand_l - elbow_l).normalize_or(Vec2::Y) * 3.0,
+            6.0,
+            SKIN,
+        )
+        .named("hand_l")
+        .spanning(
+            hand_l,
+            hand_l + (hand_l - elbow_l).normalize_or(Vec2::Y) * 9.0,
+        ),
+    );
     if dress.skirt {
         // A dress hangs from the hips in a bell; boots show under it.
         let hem = (ankle_r + ankle_l) / 2.0 + Vec2::new(0.0, -6.0);
-        v.push(Piece::new(pelvis, hem, 34.0, dress.legs).square());
+        v.push(
+            Piece::new(pelvis, hem, 34.0, dress.legs)
+                .square()
+                .named("skirt"),
+        );
     } else {
-        v.push(Piece::new(hip_r, knee_r, 12.0, dress.legs));
-        v.push(Piece::new(knee_r, ankle_r, 10.0, dress.legs));
-        v.push(Piece::new(hip_l, knee_l, 12.0, dress.legs));
-        v.push(Piece::new(knee_l, ankle_l, 10.0, dress.legs));
+        v.push(Piece::new(hip_r, knee_r, 12.0, dress.legs).named("thigh_r"));
+        v.push(Piece::new(knee_r, ankle_r, 10.0, dress.legs).named("shin_r"));
+        v.push(Piece::new(hip_l, knee_l, 12.0, dress.legs).named("thigh_l"));
+        v.push(Piece::new(knee_l, ankle_l, 10.0, dress.legs).named("shin_l"));
     }
-    v.push(Piece::new(
-        ankle_r,
-        ankle_r + Vec2::new(-8.0, 0.0),
-        7.0,
-        dress.feet,
-    ));
-    v.push(Piece::new(
-        ankle_l,
-        ankle_l + Vec2::new(8.0, 0.0),
-        7.0,
-        dress.feet,
-    ));
+    // Boots: drawn standing, ankle at the top, sole at the bottom, the toe
+    // out to its own side.
+    v.push(
+        Piece::new(ankle_r, ankle_r + Vec2::new(-8.0, 0.0), 7.0, dress.feet)
+            .named("boot_r")
+            .spanning(
+                ankle_r + Vec2::new(-4.0, -6.0),
+                ankle_r + Vec2::new(-4.0, 4.0),
+            ),
+    );
+    v.push(
+        Piece::new(ankle_l, ankle_l + Vec2::new(8.0, 0.0), 7.0, dress.feet)
+            .named("boot_l")
+            .spanning(
+                ankle_l + Vec2::new(4.0, -6.0),
+                ankle_l + Vec2::new(4.0, 4.0),
+            ),
+    );
     // Torso: the coat over the shirt; a strip of shirt down the front.
-    v.push(Piece::new(pelvis, neck, 30.0, coat));
+    v.push(
+        Piece::new(pelvis, neck, 30.0, coat)
+            .named("torso")
+            .spanning(neck, pelvis),
+    );
     if dress.coat.is_some() {
         v.push(Piece::new(
             at(pelvis, spine_a, 6.0),
@@ -340,50 +435,87 @@ pub fn pose(b: &Build, dr: &Drive, dress: &Dress) -> Vec<Piece> {
                 5.0,
                 IRON,
             )
-            .square(),
+            .square()
+            .named("belt")
+            .spanning(pelvis + Vec2::new(0.0, -3.0), pelvis + Vec2::new(0.0, 3.0)),
         );
-        v.push(Piece::new(
-            hip_r + Vec2::new(-6.0, 0.0),
-            hip_r + Vec2::new(-6.0, 14.0),
-            6.0,
-            IRON,
-        ));
+        v.push(
+            Piece::new(
+                hip_r + Vec2::new(-6.0, 0.0),
+                hip_r + Vec2::new(-6.0, 14.0),
+                6.0,
+                IRON,
+            )
+            .named("holster"),
+        );
     }
     if dress.knife {
-        v.push(Piece::new(
-            hip_l + Vec2::new(4.0, 0.0),
-            hip_l + Vec2::new(7.0, 13.0),
-            3.0,
-            rgb(0.75, 0.75, 0.72),
-        ));
+        v.push(
+            Piece::new(
+                hip_l + Vec2::new(4.0, 0.0),
+                hip_l + Vec2::new(7.0, 13.0),
+                3.0,
+                rgb(0.75, 0.75, 0.72),
+            )
+            .named("knife"),
+        );
     }
-    // Head and hat.
-    v.push(Piece::new(neck, at(neck, head_a, b.neck), 8.0, SKIN));
-    v.push(Piece::new(
-        head_c,
-        head_c + Vec2::new(0.0, 0.01),
-        b.head * 2.0,
-        SKIN,
-    ));
+    // Head and hat. The head is drawn crown to chin.
+    v.push(Piece::new(neck, at(neck, head_a, b.neck), 8.0, SKIN).named("neck"));
+    v.push(
+        Piece::new(head_c, head_c + Vec2::new(0.0, 0.01), b.head * 2.0, SKIN)
+            .named(if dress.skirt { "head_woman" } else { "head" })
+            .spanning(
+                at(head_c, head_a, b.head * 1.15),
+                at(head_c, head_a, -b.head),
+            ),
+    );
     if let Some((c, brim, crown)) = dress.hat {
         let top = at(head_c, head_a, b.head * 0.7);
         let side = Vec2::from_angle(head_a + DOWN);
-        v.push(Piece::new(top - side * brim / 2.0, top + side * brim / 2.0, 4.0, c).square());
-        v.push(Piece::new(top, at(top, head_a, crown), 18.0, c).square());
+        v.push(
+            Piece::new(top - side * brim / 2.0, top + side * brim / 2.0, 4.0, c)
+                .square()
+                .named("hat_brim"),
+        );
+        // Drawn art is the whole hat, crown to brim.
+        v.push(
+            Piece::new(top, at(top, head_a, crown), 18.0, c)
+                .square()
+                .named("hat")
+                .spanning(at(top, head_a, crown), at(top, head_a, -2.0)),
+        );
     }
-    // The rifle, then the front arm over it.
+    // The rifle, then the front arm over it. Drawn art is the whole gun,
+    // muzzle at the top, butt at the bottom.
     if dress.gun {
-        v.push(Piece::new(butt, hand_r, 6.0, WOOD).square());
-        v.push(Piece::new(hand_r, muzzle, 3.5, IRON).square());
+        v.push(
+            Piece::new(butt, hand_r, 6.0, WOOD)
+                .square()
+                .named("rifle")
+                .spanning(muzzle, butt),
+        );
+        v.push(
+            Piece::new(hand_r, muzzle, 3.5, IRON)
+                .square()
+                .named("rifle_barrel"),
+        );
     }
-    v.push(Piece::new(shoulder_r, elbow_r, 9.0, coat));
-    v.push(Piece::new(elbow_r, hand_r, 8.0, coat));
-    v.push(Piece::new(
-        hand_r,
-        hand_r + (hand_r - elbow_r).normalize_or(Vec2::Y) * 3.0,
-        6.0,
-        SKIN,
-    ));
+    v.push(Piece::new(shoulder_r, elbow_r, 9.0, coat).named("upper_arm_r"));
+    v.push(Piece::new(elbow_r, hand_r, 8.0, coat).named("forearm_r"));
+    v.push(
+        Piece::new(
+            hand_r,
+            hand_r + (hand_r - elbow_r).normalize_or(Vec2::Y) * 3.0,
+            6.0,
+            SKIN,
+        )
+        .named("hand_r")
+        .spanning(
+            hand_r,
+            hand_r + (hand_r - elbow_r).normalize_or(Vec2::Y) * 9.0,
+        ),
+    );
     v.truncate(PARTS);
     v
 }
@@ -459,15 +591,61 @@ pub fn wounds(world: &World, id: NpcId) -> (bool, bool) {
 
 /// Write pieces into the UI nodes: each node is a capsule centered on its
 /// piece, rotated to lie along it.
-pub fn paint(
-    pieces: &[Piece],
-    parts: &mut Query<(&Part, &mut Node, &mut BackgroundColor, &mut UiTransform)>,
-) {
-    for (p, mut node, mut bg, mut tf) in parts.iter_mut() {
+/// What a part is drawn with when its file is there: the whole hat replaces
+/// the brim slab, the whole rifle the barrel slab.
+fn covered_by(name: &str) -> Option<&'static str> {
+    match name {
+        "hat_brim" => Some("hat"),
+        "rifle_barrel" => Some("rifle"),
+        _ => None,
+    }
+}
+
+pub type PartQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static Part,
+        &'static mut Node,
+        &'static mut BackgroundColor,
+        &'static mut UiTransform,
+        &'static mut ImageNode,
+    ),
+>;
+
+pub fn paint(pieces: &[Piece], parts: &mut PartQuery, art: &RigArt, images: &Assets<Image>) {
+    for (p, mut node, mut bg, mut tf, mut img) in parts.iter_mut() {
         let Some(pc) = pieces.get(p.0) else {
             node.display = Display::None;
             continue;
         };
+        if covered_by(pc.name).is_some_and(|n| art.has(n)) {
+            node.display = Display::None;
+            continue;
+        }
+        // Drawn art: hung between its joints, as wide as the drawing is.
+        if let Some(h) = art.get(pc.name)
+            && let Some(im) = images.get(h)
+        {
+            let (top, bottom) = pc.span.unwrap_or((pc.a, pc.b));
+            let d = bottom - top;
+            let len = d.length().max(1.0);
+            let size = im.size();
+            let width = len * size.x as f32 / size.y.max(1) as f32;
+            let c = (top + bottom) / 2.0;
+            node.display = Display::Flex;
+            node.left = Val::Px(c.x - width / 2.0);
+            node.top = Val::Px(c.y - len / 2.0);
+            node.width = Val::Px(width);
+            node.height = Val::Px(len);
+            node.border_radius = BorderRadius::ZERO;
+            bg.0 = Color::NONE;
+            img.image = h.clone();
+            img.color = pc.color;
+            tf.rotation = Rot2::radians(d.y.atan2(d.x) - std::f32::consts::FRAC_PI_2);
+            continue;
+        }
+        img.color = Color::NONE;
         let d = pc.b - pc.a;
         let len = d.length() + if pc.round { pc.thick } else { 0.0 };
         let c = (pc.a + pc.b) / 2.0;
@@ -496,6 +674,10 @@ pub fn spawn(s: &mut ChildSpawnerCommands) {
                 ..default()
             },
             BackgroundColor(Color::NONE),
+            ImageNode {
+                color: Color::NONE,
+                ..default()
+            },
             UiTransform::default(),
             Part(i),
         ));

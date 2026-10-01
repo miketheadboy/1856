@@ -892,12 +892,9 @@ pub fn figure(
     game: Res<Game>,
     sim: Res<Sim>,
     mut motion: ResMut<crate::rig::Motion>,
-    mut parts: Query<(
-        &crate::rig::Part,
-        &mut Node,
-        &mut BackgroundColor,
-        &mut UiTransform,
-    )>,
+    art: Res<crate::rig::RigArt>,
+    images: Res<Assets<Image>>,
+    mut parts: crate::rig::PartQuery,
 ) {
     use crate::rig;
     let world = &sim.0;
@@ -912,7 +909,7 @@ pub fn figure(
     );
     let (Some(a), true) = (actor, gate) else {
         motion.reset();
-        rig::paint(&[], &mut parts);
+        rig::paint(&[], &mut parts, &art, &images);
         return;
     };
     let smooth = |x: f32| {
@@ -975,7 +972,7 @@ pub fn figure(
             ..p
         })
         .collect();
-    rig::paint(&pieces, &mut parts);
+    rig::paint(&pieces, &mut parts, &art, &images);
 }
 
 /// Paint whatever game is on.

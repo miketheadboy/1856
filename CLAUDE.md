@@ -32,11 +32,18 @@ src/main.rs      Bevy view: app wiring, screens (County, Claim, Town). No rules 
                  the fall; clothes off the outfit, old wounds in the pose
   raid.rs        a neighbor's place at night: lantern cones, a dog, crawl, hold E to do it
   ui.rs          blue command windows, toast, top bar, status (Tab), paper (N)
+  look.rs        the printed-sheet pass over the whole frame (assets/look.txt, hot-reloaded;
+                 assets/shaders/look.wgsl); tension and night move it; BK_LOOK=0 turns it off
+  audio.rs       the score: four stems (assets/audio/stem_*.ogg) mixed by tension, night and
+                 fresh killings; BK_MUTE=1
+                 rig parts load from assets/rig/<part>.png, scene plates from
+                 assets/plates/<scene>.png (docs/ART.md has the contracts)
   panels.rs      text readouts; scenery.rs map art, seasons, weather, night
 src/bin/lab.rs   the lab: run one system at a time and look inside it
 src/bin/headless.rs  chronicle runner and seed survey
 benches/sim.rs   criterion benches
 assets/fonts/    IM Fell English, EB Garamond (OFL licenses alongside)
+docs/ART.md      the art, sound and look guide: delivery specs and the creative brief
 docs/screenshots/
 ```
 
