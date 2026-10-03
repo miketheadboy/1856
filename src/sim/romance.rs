@@ -23,6 +23,13 @@ pub struct Hearts {
     pub affection: Vec<(NpcId, NpcId, f32)>,
     /// Secret affairs, and the day they began.
     pub affairs: Vec<(NpcId, NpcId, Day)>,
+    /// Newcomers who left a living spouse back in the States. Nobody here
+    /// knows; a marriage in the county makes them a bigamist.
+    pub back_east: Vec<NpcId>,
+    /// Marriages made on a lie: (bigamist, the spouse here, who moved house
+    /// at the wedding, and the family they came from, to go home to when it
+    /// comes out).
+    pub bigamous: Vec<(NpcId, NpcId, NpcId, FamilyId)>,
 }
 
 impl Hearts {
@@ -84,9 +91,33 @@ impl Hearts {
     }
 }
 
-/// A living spouse, if any.
+/// A living spouse, if any. Walks every marriage on record: a widower's
+/// first wife, dead, must not hide his second (the auditor caught Elias Pike
+/// marrying a third time on the strength of a grave).
 pub fn married_to(world: &World, id: NpcId) -> Option<NpcId> {
-    world.hearts.spouse_of(id).filter(|&s| world.npc(s).alive)
+    world.hearts.couples.iter().find_map(|&(a, b)| {
+        let other = if a == id {
+            b
+        } else if b == id {
+            a
+        } else {
+            return None;
+        };
+        world.npc(other).alive.then_some(other)
+    })
+}
+
+/// Every spouse ever, living or dead.
+pub fn spouses(world: &World, id: NpcId) -> impl Iterator<Item = NpcId> + '_ {
+    world.hearts.couples.iter().filter_map(move |&(a, b)| {
+        if a == id {
+            Some(b)
+        } else if b == id {
+            Some(a)
+        } else {
+            None
+        }
+    })
 }
 
 /// How much a person resists a suitor: faith, honesty, and a living spouse.
@@ -103,7 +134,12 @@ pub fn fidelity(world: &World, id: NpcId) -> f32 {
 /// Charm: talk, nerve, and luck.
 pub fn charm(world: &World, id: NpcId) -> f32 {
     let n = world.npc(id);
-    0.5 * n.temperament.sociability + 0.3 * n.temperament.courage + 0.2 * n.hidden.luck.min(1.5)
+    // A boiled shirt helps; rags don't.
+    let dressed = n.outfit.bonus().charm - 0.2 * n.outfit.wear;
+    0.5 * n.temperament.sociability
+        + 0.3 * n.temperament.courage
+        + 0.2 * n.hidden.luck.min(1.5)
+        + dressed
 }
 
 /// One afternoon of courting. Returns the beloved's affection after.
@@ -193,6 +229,7 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             }
         }
         EventKind::Marriage { a, b } => marry(world, ev, a, b),
+        EventKind::Bigamy { bigamist, spouse } => bigamy_out(world, bigamist, spouse),
         EventKind::Born { child, .. } if world.npc(child).family == 0 => {
             world.life.spirits = (world.life.spirits + 15.0).min(100.0);
         }
@@ -203,6 +240,54 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
                 .retain(|&(x, y, _)| x != victim && y != victim);
         }
         _ => {}
+    }
+}
+
+/// A letter from the first wife (or husband) back home. The marriage here was
+/// never lawful: it's undone, the one who moved goes home to their people,
+/// and the county has its scandal. A felony under the territorial statutes,
+/// but not violence, so no paper (warrants are for violence only).
+fn bigamy_out(world: &mut World, bigamist: NpcId, spouse: NpcId) {
+    let Some(i) = world
+        .hearts
+        .bigamous
+        .iter()
+        .position(|&(x, y, _, _)| x == bigamist && y == spouse)
+    else {
+        return;
+    };
+    let (_, _, moved, went_from) = world.hearts.bigamous.remove(i);
+    // Both of them may have left someone in the States; the marriage is
+    // undone for both lies at once (the auditor caught Temperance Bell's
+    // lie outliving the wedding it was about).
+    world.hearts.bigamous.retain(|&(x, y, _, _)| {
+        !((x == spouse && y == bigamist) || (x == bigamist && y == spouse))
+    });
+    world.hearts.back_east.retain(|&x| x != bigamist);
+    world
+        .hearts
+        .couples
+        .retain(|&(x, y)| !((x == bigamist && y == spouse) || (x == spouse && y == bigamist)));
+    // Whoever moved at the wedding goes home, if home is still there.
+    if world.head_of(went_from).is_some() {
+        world.npc_mut(moved).family = went_from;
+        world.npc_mut(moved).faction = world.families[went_from as usize].faction;
+    }
+    let wronged: Vec<NpcId> = kin(world, world.npc(spouse).family);
+    for k in wronged {
+        world.adjust_opinion(k, bigamist, -60);
+    }
+    world.adjust_opinion(spouse, bigamist, -80);
+    let s = world.npc_mut(spouse);
+    s.emotions.grief += 30.0;
+    s.emotions.anger += 40.0;
+    let pious: Vec<NpcId> = world
+        .living()
+        .filter(|n| n.temperament.piety > 0.5 && n.id != bigamist)
+        .map(|n| n.id)
+        .collect();
+    for p in pious {
+        world.adjust_opinion(p, bigamist, -12);
     }
 }
 
@@ -219,6 +304,24 @@ fn marry(world: &mut World, ev: &WorldEvent, a: NpcId, b: NpcId) {
         (b, a)
     };
     let (home, old) = (world.npc(stays).family, world.npc(moves).family);
+    // Married once already, back in the States: nobody here knows.
+    for (liar, here) in [(a, b), (b, a)] {
+        if world.hearts.back_east.contains(&liar) {
+            world.hearts.bigamous.push((liar, here, moves, old));
+        }
+    }
+    // Across the line: marked before the one who moves takes the new side.
+    if world.npc(a).faction != world.npc(b).faction {
+        for who in [a, b] {
+            world.emit_child(
+                ev,
+                EventKind::MarkEarned {
+                    who,
+                    mark: super::marks::Mark::MarriedAcross,
+                },
+            );
+        }
+    }
     world.npc_mut(moves).family = home;
     world.npc_mut(moves).faction = world.families[home as usize].faction;
     world.adjust_opinion(a, b, 30);

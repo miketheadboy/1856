@@ -12,7 +12,7 @@
 //! The plains nations (Cheyenne, Kiowa, Comanche, Arapaho, Pawnee, Sioux) are
 //! off this map; they enter through trail safety and the news (`history`).
 
-use super::events::{EventKind, Suspect};
+use super::events::{EventKind, Suspect, WorldEvent};
 use super::market::Good;
 use super::psyche::LifeStage;
 use super::world::{Faction, NpcId, World, distance};
@@ -167,7 +167,14 @@ pub fn cut_reserve_timber(world: &mut World, family: u32) -> bool {
     n.land_pressure = (n.land_pressure + 3.0).min(100.0);
     n.trust[faction.index()] -= 6.0;
     world.families[family as usize].stores.goods[Good::Timber.index()] += 4.0;
-    world.emit_root(EventKind::Trespass { family, nation: id }, None);
+    // The stands near home are stumps: that's why he crossed the line.
+    let stumps = world
+        .events
+        .iter()
+        .rev()
+        .find(|e| matches!(e.kind, EventKind::StandCut { family: f, .. } if f == family))
+        .map(|e| e.id);
+    world.emit_root(EventKind::Trespass { family, nation: id }, stumps);
     true
 }
 
@@ -231,7 +238,14 @@ pub fn monthly(world: &mut World) {
             if acted {
                 n.land_pressure = (n.land_pressure - 15.0).max(0.0);
             }
-            world.emit_root(EventKind::Complaint { nation: id, acted }, None);
+            // The complaint names the last trespass the agent heard of.
+            let over = world
+                .events
+                .iter()
+                .rev()
+                .find(|e| matches!(e.kind, EventKind::Trespass { nation, .. } if nation == id))
+                .map(|e| e.id);
+            world.emit_root(EventKind::Complaint { nation: id, acted }, over);
         }
 
         // When the county is at war, riders cross reserve land and take what
@@ -288,13 +302,23 @@ fn visits(world: &mut World) {
         k.trust[faction.index()] -= 3.0;
         k.settler_hostility += 3.0;
     }
+    // A thin hunt in the fall is a hungry family at the door in the
+    // winter (`bison`): the visit stands on the hunt that failed.
+    let since = world.day.0.saturating_sub(200);
+    let thin_hunt = world
+        .events
+        .iter()
+        .rev()
+        .take_while(|e| e.day.0 >= since)
+        .find(|e| matches!(e.kind, EventKind::KawHunt { good: false }))
+        .map(|e| e.id);
     world.emit_root(
         EventKind::Visit {
             nation: NationId::Kaw,
             host,
             fed,
         },
-        None,
+        thin_hunt,
     );
 }
 
@@ -363,6 +387,32 @@ pub fn blamed_nation(s: Suspect) -> Option<NationId> {
         _ => None,
     }
 }
+
+/// A settler's party on the Kaw's buffalo range is a grievance the Kaw
+/// carry to their agent, the way they carried every other: on paper
+/// (Miner & Unrau). Washington rarely acts.
+pub fn on_event(world: &mut World, ev: &WorldEvent) {
+    if let EventKind::BuffaloHunt { animals, .. } = ev.kind
+        && animals > 0
+    {
+        let k = nation_mut(world, NationId::Kaw);
+        k.land_pressure = (k.land_pressure + 2.0 * animals as f32).min(100.0);
+        if world.rng.chance(RANGE_COMPLAINT) {
+            let acted = world.rng.chance(0.15);
+            nation_mut(world, NationId::Kaw).complaints += 1;
+            world.emit_child(
+                ev,
+                EventKind::Complaint {
+                    nation: NationId::Kaw,
+                    acted,
+                },
+            );
+        }
+    }
+}
+
+/// Chance a settler hunt on the range becomes a complaint to the agent.
+const RANGE_COMPLAINT: f32 = 0.35;
 
 #[cfg(test)]
 mod tests {

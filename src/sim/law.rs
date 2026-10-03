@@ -11,6 +11,9 @@ use super::events::{EventKind, WorldEvent};
 use super::psyche::LifeStage;
 use super::world::{Faction, FamilyId, NpcId, PLAYER, World, is_woman};
 
+/// Chance a captain keeps a dead man's name on the roll.
+const PAD_ODDS: f32 = 0.5;
+
 /// Days a musterer is gone.
 pub const SERVICE_DAYS: u32 = 10;
 /// Days to answer a muster call before you're counted a shirker.
@@ -125,6 +128,8 @@ pub struct Law {
     pub muster: Option<(usize, Day, Vec<NpcId>)>,
     /// The player answered the current call (joined or refused openly).
     pub player_answered: bool,
+    /// Dead men kept on the open roll (`RollPadded`).
+    pub padded: Vec<NpcId>,
 }
 
 impl Law {
@@ -159,6 +164,7 @@ pub fn eligible(world: &World, id: NpcId) -> bool {
         && !n.wounded
         && LifeStage::of(n.age) == LifeStage::Adult
         && (id == PLAYER || !is_woman(&n.name))
+        && !super::warrant::held(world, id)
 }
 
 /// The chance a plaintiff wins before this justice.
@@ -176,7 +182,10 @@ pub fn odds(world: &World, plaintiff: NpcId, defendant: NpcId, letters: f32) -> 
         (Faction::ProSlavery, Faction::FreeState) => 0.2,
         _ => 0.0,
     };
-    (0.45 + if filed { 0.25 } else { 0.0 } + 0.15 * letters + bias).clamp(0.05, 0.95)
+    // Whose word the court takes (`standing`).
+    let names =
+        0.3 * (super::standing::word(world, plaintiff) - super::standing::word(world, defendant));
+    (0.45 + if filed { 0.25 } else { 0.0 } + 0.15 * letters + bias + names).clamp(0.05, 0.95)
 }
 
 /// Today is an election day.
@@ -223,6 +232,34 @@ pub fn sue(world: &mut World, plaintiff: NpcId, defendant: NpcId, letters: f32) 
 pub fn on_event(world: &mut World, ev: &WorldEvent) {
     match ev.kind {
         EventKind::Election { .. } | EventKind::VoteSold { .. } => on_election(world, ev),
+        // The dead can't ride: they come off the list of men the day they
+        // die. Whether they come off the *roll* is up to the captain.
+        EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => {
+            let Some((i, _, men)) = &mut world.law.muster else {
+                return;
+            };
+            let i = *i as u8;
+            if !men.contains(&victim) {
+                return;
+            }
+            men.retain(|&m| m != victim);
+            if world.rng.chance(PAD_ODDS) {
+                world.emit_child(
+                    ev,
+                    EventKind::RollPadded {
+                        name: victim,
+                        index: i,
+                    },
+                );
+            }
+        }
+        // Names kept while the call is open; at the close the captain
+        // counts his own.
+        EventKind::RollPadded { name, .. } if world.law.muster.is_some() => {
+            if !world.law.padded.contains(&name) {
+                world.law.padded.push(name);
+            }
+        }
         EventKind::ClaimJumped {
             family,
             lost,
@@ -483,6 +520,46 @@ fn close_muster(world: &mut World, i: usize) {
         return;
     };
     let c = &MUSTERS[i];
+    // The captain fills out the roll with the year's dead of his side: a
+    // name is a man's pay and rations, and a company that looks stronger.
+    let side_called = |f: Faction| match f {
+        Faction::FreeState => c.free_state,
+        Faction::ProSlavery => c.pro_slavery,
+    };
+    let since = world.day.0.saturating_sub(365);
+    let lately_dead: Vec<(NpcId, super::events::EventId)> = world
+        .events
+        .iter()
+        .rev()
+        .take_while(|e| e.day.0 >= since)
+        .filter_map(|e| match e.kind {
+            EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => {
+                Some((victim, e.id))
+            }
+            _ => None,
+        })
+        .filter(|&(v, _)| {
+            v != PLAYER
+                && side_called(world.npc(v).faction)
+                && !is_woman(&world.npc(v).name)
+                && world.npc(v).age >= 18
+                && !world.law.padded.contains(&v)
+        })
+        .collect();
+    let mut padded = std::mem::take(&mut world.law.padded).len() as u8;
+    for (v, died) in lately_dead {
+        if world.rng.chance(0.3) {
+            // The roll stands on the grave.
+            world.emit_root(
+                EventKind::RollPadded {
+                    name: v,
+                    index: i as u8,
+                },
+                Some(died),
+            );
+            padded += 1;
+        }
+    }
     let called = |world: &World, id: NpcId| match world.npc(id).faction {
         Faction::FreeState => c.free_state,
         Faction::ProSlavery => c.pro_slavery,
@@ -517,7 +594,7 @@ fn close_muster(world: &mut World, i: usize) {
         }
     }
     // A fight: men from this county shot at each other.
-    let mut wounded = 0u8;
+    let mut shot: Vec<(NpcId, NpcId)> = Vec::new();
     if c.fight {
         for &j in &joined {
             let enemies: Vec<NpcId> = joined
@@ -527,27 +604,27 @@ fn close_muster(world: &mut World, i: usize) {
                 .collect();
             if !enemies.is_empty() && world.rng.chance(0.08) {
                 let by = enemies[world.rng.range(0, enemies.len() as u32) as usize];
-                world.emit_root(
-                    EventKind::Wounded {
-                        victim: j,
-                        attacker: by,
-                    },
-                    None,
-                );
-                wounded += 1;
+                shot.push((j, by));
             }
         }
     }
-    world.emit_root(
+    let muster = world.emit_root(
         EventKind::Muster {
             index: i as u8,
             joined: joined.len() as u8,
             dodged: dodgers.len() as u8,
-            wounded,
+            wounded: shot.len() as u8,
             you: joined.contains(&PLAYER),
+            padded,
         },
         None,
     );
+    // Men shot at the muster: the wound stands on the muster (`law` ->
+    // the county's violence, its blame, its oaths).
+    let parent = world.events[muster as usize].clone();
+    for (victim, attacker) in shot {
+        world.emit_child(&parent, EventKind::Wounded { victim, attacker });
+    }
 }
 
 #[cfg(test)]

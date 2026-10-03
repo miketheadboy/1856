@@ -19,7 +19,7 @@ use super::psyche::{self, LifeStage};
 use super::romance;
 use super::world::{Faction, NpcId, PLAYER, World};
 
-pub const SKILLS: usize = 9;
+pub const SKILLS: usize = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Skill {
@@ -41,6 +41,8 @@ pub enum Skill {
     Drink,
     /// Where the muskrat run; more pelts off the same line.
     Trapping,
+    /// Herbs and nursing: more bark in the woods, and the sick pull through.
+    Physic,
 }
 
 impl Skill {
@@ -54,6 +56,7 @@ impl Skill {
         Skill::Letters,
         Skill::Drink,
         Skill::Trapping,
+        Skill::Physic,
     ];
 
     pub fn index(self) -> usize {
@@ -71,6 +74,7 @@ impl Skill {
             Skill::Letters => "letters",
             Skill::Drink => "drink",
             Skill::Trapping => "trapping",
+            Skill::Physic => "physic",
         }
     }
 }
@@ -198,6 +202,9 @@ pub struct Life {
     pub ballot: Option<(Day, super::law::Ballot)>,
     /// Children who've come of age in your shadow.
     pub legacies: Vec<NpcId>,
+    /// What your clothes add to each skill (`wardrobe`): a black frock
+    /// preaches, spectacles read.
+    pub gear: [f32; SKILLS],
 }
 
 impl Default for Life {
@@ -215,6 +222,7 @@ impl Default for Life {
             wrote_home: 0,
             ballot: None,
             legacies: Vec::new(),
+            gear: [0.0; SKILLS],
         }
     }
 }
@@ -223,7 +231,7 @@ impl Life {
     /// 0..1, diminishing returns: 200 xp (a season of steady practice) is halfway.
     pub fn skill(&self, s: Skill) -> f32 {
         let x = self.xp[s.index()];
-        x / (x + 200.0)
+        (x / (x + 200.0) + self.gear[s.index()]).min(1.0)
     }
 
     pub(crate) fn learn(&mut self, s: Skill, amount: f32) {
@@ -569,7 +577,7 @@ fn trap(world: &mut World) -> bool {
     // Muskrat are small money; a beaver is a robe's worth.
     let hides = muskrat as f32 * 0.25 + beaver as f32 * 1.5;
     world.families[0].stores.goods[Good::Hides.index()] += hides;
-    world.families[0].stores.food += muskrat as f32 * 0.5;
+    super::larder::add_meat(world, 0, muskrat as f32 * 0.5);
     // Run the line far enough and you're on the reserve.
     if skill > 0.3 && world.rng.chance(0.08) {
         world.emit_root(
@@ -651,7 +659,7 @@ fn fish(world: &mut World) -> bool {
     let luck = world.npc(PLAYER).hidden.luck;
     let noise = world.rng.unit();
     let fish = ((1.0 + 8.0 * skill) * season * moon * luck * (0.4 + noise)).round();
-    world.families[0].stores.food += 2.0 * fish;
+    super::larder::add_meat(world, 0, 2.0 * fish);
     world.life.learn(Skill::Fishing, 2.0);
     world.life.cheer(6.0);
     family::leave_for(world, Errand::Fishing, 1);

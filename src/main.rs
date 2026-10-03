@@ -5,19 +5,23 @@
 //!
 //! Debug knobs (env vars): BK_SEED, BK_START_DAYS (run the sim ahead before
 //! showing it), BK_DAY_SECONDS (clock speed), BK_SCREEN (county, claim,
-//! lawrence, franklin, lecompton), BK_PLAY (gate, door, raid, ambush, bench: start
-//! in one of the action games against the Pikes).
+//! lawrence, franklin, lecompton), BK_PLAY (gate, door, raid, ambush, bench, posse,
+//! paper: start in one of the action games against the Pikes, or with the law on
+//! the road).
 
 // Bevy systems take their world as arguments; long parameter lists and
 // query types are how it's written.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
+mod audio;
 mod claim;
 mod cmds;
 mod county;
 mod duel;
+mod look;
 mod panels;
 mod raid;
+mod rig;
 mod scene;
 mod scenery;
 mod town;
@@ -35,6 +39,21 @@ const CHARCOAL: Color = Color::srgb(0.086, 0.078, 0.071);
 const OXBLOOD: Color = Color::srgb(0.56, 0.17, 0.13);
 const SLATE: Color = Color::srgb(0.40, 0.55, 0.72);
 const INK_GREEN: Color = Color::srgb(0.20, 0.30, 0.18);
+
+/// Whether `assets/<rel>` exists, so optional art and sound can be left out
+/// without the asset server shouting about it.
+pub fn asset_exists(rel: &str) -> bool {
+    let root = std::env::var("BEVY_ASSET_ROOT")
+        .or_else(|_| std::env::var("CARGO_MANIFEST_DIR"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                .unwrap_or_default()
+        });
+    root.join("assets").join(rel).exists()
+}
 
 /// Map's top-left corner in world coordinates.
 const MAP_ORIGIN: Vec2 = Vec2::new(-624.0, 344.0);
@@ -158,6 +177,11 @@ fn main() {
         .init_resource::<walk::Bounds>()
         .init_resource::<county::CountyView>()
         .init_resource::<duel::Game>()
+        .init_resource::<rig::Motion>()
+        .init_resource::<rig::RigArt>()
+        .init_resource::<scene::Plates>()
+        .init_resource::<audio::Score>()
+        .add_plugins(look::LookPlugin)
         .init_resource::<raid::Raid>()
         .insert_resource(scenes)
         .add_systems(
@@ -169,6 +193,7 @@ fn main() {
                 ui::setup,
                 scene::setup,
                 duel::setup,
+                audio::setup,
                 debug_play,
             )
                 .chain(),
@@ -192,12 +217,15 @@ fn main() {
                 ui::overlays,
                 ui::dusk,
                 scene::run,
+                scene::plate,
                 duel::play,
                 duel::draw,
+                duel::figure,
             )
                 .chain(),
         )
         .add_systems(Update, raid::sneak.run_if(in_state(Screen::Raid)))
+        .add_systems(Update, (audio::start, audio::mix).chain())
         .add_systems(
             Update,
             (
@@ -275,6 +303,21 @@ fn debug_play(
         }
         Ok("bench") => {
             game.craft(world, bleeding_kansas::sim::arms::Craft::Balls, 1.0);
+        }
+        Ok("posse") | Ok("paper") => {
+            use bleeding_kansas::sim::warrant;
+            // A killing you may or may not have done, sworn to.
+            let about = world.emit_root(
+                bleeding_kansas::sim::EventKind::ShotAt {
+                    shooter: bleeding_kansas::sim::world::PLAYER,
+                    target: pike,
+                },
+                None,
+            );
+            let i = warrant::write(world, bleeding_kansas::sim::world::PLAYER, about, 45);
+            if std::env::var("BK_PLAY").as_deref() == Ok("posse") {
+                warrant::serve_now(world, i);
+            }
         }
         Ok("ambush") => {
             if let Some(plan) = action::ambush_plan(world, pike) {

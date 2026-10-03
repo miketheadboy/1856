@@ -64,6 +64,8 @@ pub struct Standoff {
     pub yours: bool,
     /// Kin who came along. They see everything.
     pub riders: Vec<NpcId>,
+    /// A warrant is being served, on you or by you (index into the list).
+    pub serving: Option<usize>,
 }
 
 /// What's driving the man in front of you. The talk-down reads it off him.
@@ -151,6 +153,7 @@ pub fn park(
         day: world.day,
         yours: false,
         riders,
+        serving: None,
     });
     world.emit_root(
         EventKind::RidersAtGate {
@@ -186,8 +189,72 @@ pub fn confront(world: &mut World, t: NpcId) -> bool {
         day: world.day,
         yours: true,
         riders: Vec::new(),
+        serving: None,
     });
     true
+}
+
+/// A posse or a hunter at your gate with a paper on you.
+pub(crate) fn serve_at_gate(world: &mut World, leader: NpcId, riders: Vec<NpcId>, paper: usize) {
+    world.npc_mut(leader).alibi = None;
+    world.action.standoff = Some(Standoff {
+        actor: leader,
+        method: Retaliation::Ambush,
+        caused_by: None,
+        day: world.day,
+        yours: false,
+        riders,
+        serving: Some(paper),
+    });
+}
+
+/// An act with known eyes: they see who did it; everyone else guesses.
+pub(crate) fn witnessed(
+    world: &mut World,
+    actor: NpcId,
+    eyes: Vec<NpcId>,
+    kind: EventKind,
+    caused_by: Option<EventId>,
+) -> EventId {
+    world.action.staged = Some((actor, eyes));
+    let id = world.emit_root(kind, caused_by);
+    world.run_cascades();
+    world.action.staged = None;
+    id
+}
+
+/// The same, done serving a warrant: no paper gets written on it.
+pub(crate) fn witnessed_lawful(
+    world: &mut World,
+    actor: NpcId,
+    eyes: Vec<NpcId>,
+    kind: EventKind,
+    caused_by: Option<EventId>,
+) -> EventId {
+    world.action.staged = Some((actor, eyes));
+    let id = world.emit_root(kind, caused_by);
+    world.warrants.lawful.push(id);
+    world.run_cascades();
+    world.action.staged = None;
+    id
+}
+
+/// Done by strangers in the dark on someone's pay: nobody saw a face.
+pub(crate) fn unseen(
+    world: &mut World,
+    actor: NpcId,
+    kind: EventKind,
+    caused_by: Option<EventId>,
+) -> EventId {
+    witnessed(world, actor, Vec::new(), kind, caused_by)
+}
+
+/// Run something that emits acts by `actor` with nobody's eyes on them.
+pub(crate) fn quietly(world: &mut World, actor: NpcId, f: impl FnOnce(&mut World)) {
+    world.action.staged = Some((actor, Vec::new()));
+    f(world);
+    world.run_cascades();
+    world.action.staged = None;
 }
 
 /// The two things most on his mind, strongest first.
@@ -215,8 +282,24 @@ pub fn their_draw(world: &World, actor: NpcId) -> f32 {
     if n.wounded {
         t += 0.15;
     }
+    // A revolver belt and a duster: the gun is already halfway out.
+    t -= n.outfit.bonus().draw;
+    // A ball through the gun arm, fresh or healed crooked.
+    t += arm_trouble(n);
     // Liquor slows everybody but the man who thinks it doesn't.
     t.clamp(0.30, 0.75)
+}
+
+/// The gun arm: a fresh wound in it is worse than an old one.
+fn arm_trouble(n: &super::world::Npc) -> f32 {
+    use super::psyche::Limb;
+    if n.hurt == Some(Limb::GunArm) {
+        0.12
+    } else if n.scars & Limb::GunArm.bit() != 0 {
+        0.05
+    } else {
+        0.0
+    }
 }
 
 /// How much your sights wander, 0 steady .. 1 all over. Marksmanship
@@ -235,7 +318,8 @@ pub fn sway(world: &World) -> f32 {
     } else {
         1.0
     };
-    ((0.85 - 0.6 * me.body.marksmanship + drunk + hurt) * sharps).clamp(0.12, 1.2)
+    let kit = me.outfit.bonus().sway - 2.0 * arm_trouble(me);
+    ((0.85 - 0.6 * me.body.marksmanship + drunk + hurt - kit) * sharps).clamp(0.12, 1.2)
 }
 
 /// Half-width of the calm zone in a staredown, 0..0.5 of the bar. Courage,
@@ -246,12 +330,14 @@ pub fn nerve(world: &World) -> f32 {
         .living()
         .filter(|n| n.family == 0 && n.id != PLAYER && LifeStage::of(n.age) == LifeStage::Adult)
         .count()
-        .min(2) as f32;
+        .min(2) as f32
+        + super::hands::at_back(world).min(3) as f32;
     // Guns you can reach, and enough rounds to make them more than furniture.
     let a = &world.families[0].stores.arms;
     let guns = a.at_hand().min(3) as f32;
     let loaded = if a.rounds() >= 10 { 0.02 } else { 0.0 };
-    0.08 + 0.10 * me.temperament.courage + 0.03 * men + 0.02 * guns + loaded
+    let dressed = me.outfit.bonus().nerve;
+    0.08 + 0.10 * me.temperament.courage + 0.03 * men + 0.02 * guns + loaded + dressed
 }
 
 /// How hard he pushes back in a staredown, 0.5 .. 2.
@@ -324,12 +410,15 @@ fn finish(world: &mut World, end: End) {
         return;
     };
     let actor = s.actor;
-    world.npc_mut(actor).plotting = None;
+    if s.serving.is_none() {
+        world.npc_mut(actor).plotting = None;
+    }
     let id = world.emit_root(
         EventKind::Standoff {
             other: actor,
             end,
             yours: s.yours,
+            law: s.serving.is_some(),
         },
         s.caused_by,
     );
@@ -350,80 +439,100 @@ fn finish(world: &mut World, end: End) {
             .chain(s.riders.iter().copied())
             .collect()
     };
-    let consequence = match end {
-        End::Shot { killed } => {
-            world.npc_mut(PLAYER).violence = world.npc(PLAYER).violence.saturating_add(1);
-            eyes.push(actor);
-            Some((
-                PLAYER,
-                if killed {
-                    EventKind::Death {
-                        victim: actor,
-                        killer: Some(PLAYER),
-                    }
-                } else {
-                    EventKind::Wounded {
-                        victim: actor,
-                        attacker: PLAYER,
-                    }
-                },
-            ))
+    let mut lawful = false;
+    let consequence = match s.serving {
+        Some(paper) => {
+            if matches!(end, End::Shot { .. }) {
+                world.npc_mut(PLAYER).violence = world.npc(PLAYER).violence.saturating_add(1);
+                eyes.push(actor);
+            }
+            super::warrant::settle(world, paper, s.yours, actor, end).map(|(who, kind, law)| {
+                lawful = law;
+                (who, kind)
+            })
         }
-        End::Beaten => {
-            let deadly = if s.method == Retaliation::Ambush {
-                0.35
-            } else {
-                0.15
-            };
-            let today = world.day;
-            let a = world.npc_mut(actor);
-            a.violence = a.violence.saturating_add(1);
-            a.last_revenge = Some(today);
-            Some((
-                actor,
-                if world.rng.chance(deadly) {
-                    EventKind::Death {
-                        victim: PLAYER,
-                        killer: Some(actor),
-                    }
-                } else {
-                    EventKind::Wounded {
-                        victim: PLAYER,
-                        attacker: actor,
-                    }
-                },
-            ))
-        }
-        End::BackedDown if !s.yours => {
-            let today = world.day;
-            world.npc_mut(actor).last_revenge = Some(today);
-            match s.method {
-                Retaliation::Arson if world.families[0].barn_standing => Some((
-                    actor,
-                    EventKind::Fire {
-                        owner: PLAYER,
-                        cause: FireCause::Arson(actor),
-                        spread_from: None,
+        None => match end {
+            End::Shot { killed } => {
+                world.npc_mut(PLAYER).violence = world.npc(PLAYER).violence.saturating_add(1);
+                eyes.push(actor);
+                Some((
+                    PLAYER,
+                    if killed {
+                        EventKind::Death {
+                            victim: actor,
+                            killer: Some(PLAYER),
+                        }
+                    } else {
+                        EventKind::Wounded {
+                            victim: actor,
+                            attacker: PLAYER,
+                        }
                     },
-                )),
-                // Nothing to burn, or they came with rifles: they take a cow
-                // and your pride and ride off.
-                _ => {
-                    world.action.staged = Some((actor, eyes.clone()));
-                    super::economy::steal_from(world, actor, 0, PLAYER);
-                    world.run_cascades();
-                    world.action.staged = None;
-                    None
+                ))
+            }
+            End::Beaten => {
+                let deadly = if s.method == Retaliation::Ambush {
+                    0.35
+                } else {
+                    0.15
+                };
+                let today = world.day;
+                let a = world.npc_mut(actor);
+                a.violence = a.violence.saturating_add(1);
+                a.last_revenge = Some(today);
+                Some((
+                    actor,
+                    if world.rng.chance(deadly) {
+                        EventKind::Death {
+                            victim: PLAYER,
+                            killer: Some(actor),
+                        }
+                    } else {
+                        EventKind::Wounded {
+                            victim: PLAYER,
+                            attacker: actor,
+                        }
+                    },
+                ))
+            }
+            End::BackedDown if !s.yours => {
+                let today = world.day;
+                world.npc_mut(actor).last_revenge = Some(today);
+                match s.method {
+                    Retaliation::Arson if world.families[0].barn_standing => Some((
+                        actor,
+                        EventKind::Fire {
+                            owner: PLAYER,
+                            cause: FireCause::Arson(actor),
+                            spread_from: None,
+                        },
+                    )),
+                    // Nothing to burn, or they came with rifles: they take a cow
+                    // and your pride and ride off.
+                    _ => {
+                        world.action.staged = Some((actor, eyes.clone()));
+                        super::economy::steal_from(world, actor, 0, PLAYER);
+                        world.run_cascades();
+                        world.action.staged = None;
+                        None
+                    }
                 }
             }
-        }
-        _ => None,
+            _ => None,
+        },
     };
     if let Some((who, kind)) = consequence {
-        world.action.staged = Some((who, eyes));
-        world.emit_root(kind, Some(id));
-        world.run_cascades();
-        world.action.staged = None;
+        let fell =
+            matches!(kind, EventKind::Death { .. } | EventKind::Wounded { .. }) && who == PLAYER;
+        let seen = eyes.clone();
+        let cid = if lawful {
+            witnessed_lawful(world, who, eyes, kind, Some(id))
+        } else {
+            witnessed(world, who, eyes, kind, Some(id))
+        };
+        if fell {
+            super::wardrobe::lootable(world, actor, cid, seen);
+        }
     } else {
         world.run_cascades();
     }
@@ -431,7 +540,10 @@ fn finish(world: &mut World, end: End) {
 
 /// What a standoff does to the people in it.
 pub fn on_event(world: &mut World, ev: &super::events::WorldEvent) {
-    let EventKind::Standoff { other, end, yours } = ev.kind else {
+    let EventKind::Standoff {
+        other, end, yours, ..
+    } = ev.kind
+    else {
         return;
     };
     let today = ev.day;
@@ -505,6 +617,8 @@ pub enum Objective {
     Wet,
     /// Crouch under the window and listen.
     Listen,
+    /// In through the back and through the trunks.
+    Steal,
 }
 
 impl Objective {
@@ -517,6 +631,7 @@ impl Objective {
             Objective::Cut => "pull the rails",
             Objective::Wet => "wet the hay",
             Objective::Listen => "listen at the window",
+            Objective::Steal => "go through the trunks",
         }
     }
 
@@ -530,6 +645,7 @@ impl Objective {
             Objective::Cut => 1.8,
             Objective::Wet => 1.8,
             Objective::Listen => 5.0,
+            Objective::Steal => 3.5,
         }
     }
 }
@@ -578,7 +694,9 @@ pub fn raid_plan(world: &World, target: NpcId) -> Option<RaidPlan> {
             id: m.id,
             alertness: m.body.alertness,
             // The frightened sit up; so do people waiting on you in particular.
-            awake: m.emotions.fear > 45.0 || world.opinion(m.id, PLAYER) < -40,
+            awake: m.emotions.fear > 45.0
+                || world.opinion(m.id, PLAYER) < -40
+                || super::hands::watchmen(world, fam).first() == Some(&m.id),
         })
         .collect();
     let mut objectives = Vec::new();
@@ -601,6 +719,15 @@ pub fn raid_plan(world: &World, target: NpcId) -> Option<RaidPlan> {
         objectives.push(Objective::Wet);
     }
     objectives.push(Objective::Listen);
+    if world
+        .npc(target)
+        .outfit
+        .pieces()
+        .any(|p| p.dear || p.price > 2)
+        || st.cash > 0
+    {
+        objectives.push(Objective::Steal);
+    }
     Some(RaidPlan {
         target,
         family: fam,
@@ -615,7 +742,13 @@ pub fn raid_plan(world: &World, target: NpcId) -> Option<RaidPlan> {
         cattle: st.cattle.min(6) as u8,
         hay,
         fences: st.work.fences,
-        stealth: world.npc(PLAYER).body.stealth,
+        stealth: (world.npc(PLAYER).body.stealth + super::wardrobe::of(world, PLAYER).stealth
+            - if world.npc(PLAYER).scars & super::psyche::Limb::Leg.bit() != 0 {
+                0.15
+            } else {
+                0.0
+            })
+        .clamp(0.0, 1.0),
     })
 }
 
@@ -653,6 +786,18 @@ pub fn raid(
         Some(Objective::Wet) => sabotage(world, Cruelty::SpoilHay),
         Some(Objective::Drive) => {
             world.player_steal(target);
+        }
+        Some(Objective::Steal) => {
+            let id = world.emit_root(
+                EventKind::Theft {
+                    thief: PLAYER,
+                    victim: target,
+                    loot: super::events::Loot::Goods,
+                },
+                None,
+            );
+            world.run_cascades();
+            super::wardrobe::loot(world, target, id, &seen_by);
         }
         Some(Objective::Listen) => {
             super::intrigue::learn(world, target);
@@ -755,7 +900,15 @@ pub fn ambush(world: &mut World, plan: &AmbushPlan, fired: Option<(NpcId, Shot)>
     };
     let id = world.emit_root(kind, None);
     world.run_cascades();
-    world.action.staged = None;
+    let eyes = world
+        .action
+        .staged
+        .take()
+        .map(|(_, e)| e)
+        .unwrap_or_default();
+    if shot != Shot::Miss {
+        super::wardrobe::lootable(world, hit, id, eyes);
+    }
     // A man you missed shoots back at the flash.
     if shot != Shot::Kill {
         let back = if shot == Shot::Miss { hit } else { plan.target };

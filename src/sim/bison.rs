@@ -126,8 +126,8 @@ fn resolve_trip(world: &mut World, family: FamilyId, hunter: NpcId) {
     let animals = (4.0 * skill * luck * abundance * world.rng.unit().max(0.3)).round();
     // Weeks away: the family eats without them, and the plains are cold.
     world.npc_mut(hunter).health -= ((if winter { 12.0 } else { 5.0 }) * frailty) as i32;
+    super::larder::add_meat(world, family, animals * 120.0);
     let hh = &mut world.families[family as usize].stores;
-    hh.food += animals * 120.0;
     hh.goods[Good::Hides.index()] += animals;
     world.bison.population = (world.bison.population - animals).max(0.0);
     world.npc_mut(hunter).alibi = None;

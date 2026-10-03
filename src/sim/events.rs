@@ -95,6 +95,8 @@ pub enum Cruelty {
     CutFence,
     /// Wet the haystack: it rots before February.
     SpoilHay,
+    /// A blanket out of a lousy house, given as a kindness.
+    FouledBlanket,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,12 +104,16 @@ pub enum Hardship {
     Hunger,
     Cold,
     Fever,
+    /// A named sickness (`sickness`).
+    Sickness(super::sickness::Disease),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Loot {
     Cow,
     Grain,
+    /// Out of the trunks: Sunday clothes, a watch, what was in the jar.
+    Goods,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -419,11 +425,74 @@ pub enum EventKind {
     /// A muster closes: who went, who stayed home, who came back hurt.
     Muster {
         index: u8,
+        /// Men who rode.
         joined: u8,
         dodged: u8,
         wounded: u8,
         /// The player rode.
         you: bool,
+        /// Dead men's names on the roll: the roll the county sees is
+        /// `joined + padded`.
+        padded: u8,
+    },
+    /// Hitched up for the river: Westport or the Lane Trail, with this many
+    /// neighbors' orders aboard (`freight`).
+    WagonOut {
+        teamster: NpcId,
+        route_west: bool,
+        orders: u8,
+    },
+    /// Home from the river with the load.
+    WagonBack {
+        teamster: NpcId,
+        /// From Westport (and the river's cholera), or down the Lane Trail
+        /// (and maybe a crate of rifles).
+        route_west: bool,
+        tenths_of_a_ton: u8,
+    },
+    /// Missourians on the Westport road took a Free-State wagon's load.
+    WagonStopped {
+        teamster: NpcId,
+        seized: u16,
+    },
+    /// A life left its mark on someone (`marks`).
+    MarkEarned {
+        who: NpcId,
+        mark: super::marks::Mark,
+    },
+    /// A mark comes back on its holder: the anniversary of a killing, the
+    /// year after a child's burying, the month after the reward was spent.
+    Remembered {
+        who: NpcId,
+        mark: super::marks::Mark,
+        years: u8,
+    },
+    /// The burying of one dead of a catching sickness: friends sat up with
+    /// the body and some carried it home (`sickness`). Friends who kept away
+    /// for fear of it are remembered for keeping away.
+    Wake {
+        dead: NpcId,
+        came: u8,
+        stayed_away: u8,
+    },
+    /// A neighbor's order came back light: the teamster kept some.
+    ShortWeight {
+        teamster: NpcId,
+        noticed_by: NpcId,
+    },
+    /// A letter from back home: the bigamist's first spouse is alive. The
+    /// marriage here is undone.
+    Bigamy {
+        bigamist: NpcId,
+        spouse: NpcId,
+    },
+    /// A captain kept a dead man's name on the muster roll: his pay and
+    /// rations, and a stronger company on paper (the rolls of 1855–56 were
+    /// padded; the 1857 Oxford returns were copied out of a Cincinnati
+    /// directory). Known only to the captain until someone reads the roll.
+    RollPadded {
+        name: NpcId,
+        index: u8,
     },
     /// A paper writes you up.
     Notice {
@@ -516,10 +585,12 @@ pub enum EventKind {
         method: Retaliation,
     },
     /// How a standoff with `other` ended. `yours`: you rode to them.
+    /// `law`: somebody came, or went, with a warrant.
     Standoff {
         other: NpcId,
         end: super::action::End,
         yours: bool,
+        law: bool,
     },
     /// Someone on a place in the dark. `seen`: how many saw a face.
     Prowler {
@@ -546,6 +617,106 @@ pub enum EventKind {
     Searched {
         family: FamilyId,
         seized: u8,
+    },
+    /// Someone on watch saw riders coming and called out; they turned back.
+    /// No `watchman`: hired guns were sitting on the place.
+    TurnedBack {
+        rider: NpcId,
+        target: NpcId,
+        watchman: Option<NpcId>,
+    },
+    /// Taken on by the month.
+    HandHired {
+        hand: NpcId,
+        family: FamilyId,
+    },
+    /// Walked off, or let go. `unpaid`: there was no money on the first.
+    HandQuit {
+        hand: NpcId,
+        family: FamilyId,
+        unpaid: bool,
+    },
+    /// A hand talked in town about what he's seen in the house.
+    HandTalked {
+        hand: NpcId,
+        family: FamilyId,
+    },
+    /// A company paid to sit on a place, or to ride on one. `printed`: the
+    /// other side's paper found out who paid.
+    Hirelings {
+        company: u8,
+        payer: NpcId,
+        target: Option<NpcId>,
+        printed: bool,
+    },
+    /// The justice wrote a paper on a man for a violent act people swear to.
+    Warrant {
+        accused: NpcId,
+        about: EventId,
+        bounty: u16,
+    },
+    /// Riders out to serve a warrant. `found`: the man was there to be found.
+    PosseOut {
+        accused: NpcId,
+        leader: NpcId,
+        men: u8,
+        found: bool,
+    },
+    /// Taken in on a warrant.
+    Arrested {
+        accused: NpcId,
+        by: NpcId,
+    },
+    /// Before the justice. `days` in the Lecompton jail if convicted.
+    Tried {
+        accused: NpcId,
+        judge: NpcId,
+        convicted: bool,
+        days: u16,
+        fine: u16,
+    },
+    /// Lit out ahead of the law.
+    Fled {
+        accused: NpcId,
+        days: u16,
+    },
+    /// The price on a man's head, paid out.
+    BountyPaid {
+        hunter: NpcId,
+        accused: NpcId,
+        dollars: u16,
+        dead: bool,
+    },
+    /// Came down sick.
+    FellSick {
+        who: NpcId,
+        disease: super::sickness::Disease,
+    },
+    /// Got up again.
+    Recovered {
+        who: NpcId,
+        disease: super::sickness::Disease,
+    },
+    /// Word of an epidemic up the river.
+    Epidemic {
+        disease: super::sickness::Disease,
+    },
+    /// The doctor rode out.
+    DoctorCalled {
+        family: FamilyId,
+    },
+    /// Something given, kindly or not.
+    Gift {
+        from: NpcId,
+        to: NpcId,
+    },
+    /// Went through a fallen man's pockets, or a house's trunks. `seen`:
+    /// somebody watched.
+    Looted {
+        looter: NpcId,
+        victim: NpcId,
+        pieces: u8,
+        seen: bool,
     },
     /// Someone decided to act on a belief. Resolved by the retaliation system.
     Retaliation {

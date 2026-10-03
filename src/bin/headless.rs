@@ -131,6 +131,8 @@ fn print_stats(w: &World) {
 fn survey(n: u64, days: u32) {
     let mut with_war = 0;
     let mut totals = (0usize, 0usize, 0usize);
+    let mut law = (0usize, 0usize, 0usize);
+    let mut sick = (0usize, 0usize);
     for seed in 1..=n {
         let mut w = World::new(seed);
         w.run_days(days);
@@ -141,14 +143,24 @@ fn survey(n: u64, days: u32) {
         totals.0 += s.deaths;
         totals.1 += s.feuds;
         totals.2 += s.fires.iter().sum::<usize>();
+        for (_, s, d) in bleeding_kansas::sim::sickness::tally(&w) {
+            sick.0 += s;
+            sick.1 += d;
+        }
+        let l = bleeding_kansas::sim::warrant::ledger(&w);
+        law.0 += l.papers;
+        law.1 += l.wrong_man;
+        law.2 += l.shot_by_law + l.law_shot;
         println!(
-            "seed {:>3}: fires {:>2} (arson {:>2})  deaths {:>2}  feuds {:>2}  wars-from-nothing {}",
+            "seed {:>3}: fires {:>2} (arson {:>2})  deaths {:>2}  feuds {:>2}  wars-from-nothing {}  papers {:>2} (wrong man {:>2})",
             seed,
             s.fires.iter().sum::<usize>(),
             s.fires[3],
             s.deaths,
             s.feuds,
-            s.wars_from_nothing
+            s.wars_from_nothing,
+            l.papers,
+            l.wrong_man
         );
     }
     println!(
@@ -158,6 +170,17 @@ fn survey(n: u64, days: u32) {
         totals.2 as f32 / n as f32,
         totals.0 as f32 / n as f32,
         totals.1 as f32 / n as f32
+    );
+    println!(
+        "sickness: {:.1} down sick and {:.1} dead of it per seed",
+        sick.0 as f32 / n as f32,
+        sick.1 as f32 / n as f32
+    );
+    println!(
+        "the law: {:.1} papers per seed, {:.0}% on the wrong man, {:.1} shot serving them",
+        law.0 as f32 / n as f32,
+        100.0 * law.1 as f32 / law.0.max(1) as f32,
+        law.2 as f32 / n as f32
     );
 }
 

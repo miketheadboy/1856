@@ -43,6 +43,8 @@ pub enum Peace {
     Brokered,
     /// A wedding made them kin.
     Marriage,
+    /// They shucked corn side by side and found nothing to say against it.
+    Bee,
 }
 
 /// At the moment of the act: does the plotter go through with it?
@@ -67,13 +69,23 @@ pub fn mercy(world: &mut World, actor: NpcId, target: NpcId, method: Retaliation
     if super::ghosts::ashamed(world, actor) {
         p += 0.1;
     }
+    // A man who has killed knows what it costs; one who buried a child
+    // can't put a gun to a house with children in it (`marks`).
+    let killed = super::marks::has(world, actor, super::marks::Mark::HasKilled);
+    let buried = super::marks::has(world, actor, super::marks::Mark::BuriedAChild);
+    if killed {
+        p += 0.06;
+    }
+    if buried && children {
+        p += 0.15;
+    }
     p -= 0.5 * a.hidden.malice + a.emotions.zeal / 400.0;
     let p = p.clamp(0.0, 0.6);
     if !world.rng.chance(p) {
         return None;
     }
     let t = &world.npc(actor).temperament;
-    Some(if children && method == Retaliation::Ambush {
+    Some(if children && (method == Retaliation::Ambush || buried) {
         Mercy::Children
     } else if t.piety > t.humility {
         Mercy::Faith
@@ -98,6 +110,30 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             }
         }
         EventKind::Fire { owner, .. } => plan_raising(world, ev, owner),
+        // Two houses at feud both came to the bee. Hard to keep hating a man
+        // across a pile of husks for a whole evening (`bees`).
+        EventKind::BeeHeld { .. } => {
+            let came: Vec<FamilyId> = world
+                .gatherings
+                .today
+                .as_ref()
+                .map(|(_, _, c)| c.iter().map(|&n| world.npc(n).family).collect())
+                .unwrap_or_default();
+            let mut fams = came.clone();
+            fams.sort_unstable();
+            fams.dedup();
+            for (i, &a) in fams.iter().enumerate() {
+                for &b in &fams[i + 1..] {
+                    if world.feud_between(a, b) && world.rng.chance(BEE_PEACE) {
+                        if let (Some(ha), Some(hb)) = (world.head_of(a), world.head_of(b)) {
+                            world.adjust_opinion(ha, hb, 25);
+                            world.adjust_opinion(hb, ha, 25);
+                        }
+                        try_end(world, Some(ev), a, b, Peace::Bee);
+                    }
+                }
+            }
+        }
         EventKind::BarnRaising { owner, rival, .. } => raise(world, ev, owner, rival),
         EventKind::Perished { victim, .. }
             if LifeStage::of(world.npc(victim).age) == LifeStage::Child =>
@@ -230,6 +266,9 @@ fn condolences(world: &mut World, ev: &WorldEvent, child: NpcId) {
             _ => None,
         })
         .collect();
+    // A HashSet has no order; the dice need one (CLAUDE.md rule 4).
+    let mut enemies = enemies;
+    enemies.sort_unstable();
     for e in enemies {
         let Some(visitor) = world.head_of(e) else {
             continue;
@@ -270,6 +309,9 @@ fn try_end(
     }
     false
 }
+
+/// Chance two feuding houses at the same bee bury it.
+const BEE_PEACE: f32 = 0.3;
 
 /// Who drew whose blood, family to family, since `since`.
 fn blood_since(world: &World, since: Day) -> Vec<(FamilyId, FamilyId, NpcId, NpcId)> {
@@ -312,7 +354,8 @@ pub fn monthly(world: &mut World) {
     // Feuds nobody feeds starve.
     if today >= QUIET_DAYS {
         let bled = blood_since(world, Day(today - QUIET_DAYS));
-        let feuds: Vec<_> = world.feuds.iter().copied().collect();
+        let mut feuds: Vec<_> = world.feuds.iter().copied().collect();
+        feuds.sort_unstable();
         for (a, b) in feuds {
             let quiet = !bled
                 .iter()
@@ -324,7 +367,8 @@ pub fn monthly(world: &mut World) {
     }
 
     // The enemy of my enemy.
-    let feuds: Vec<_> = world.feuds.iter().copied().collect();
+    let mut feuds: Vec<_> = world.feuds.iter().copied().collect();
+    feuds.sort_unstable();
     let enemies = |f: FamilyId| -> Vec<FamilyId> {
         feuds
             .iter()

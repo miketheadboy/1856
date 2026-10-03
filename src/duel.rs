@@ -25,9 +25,11 @@ const STAGE: Vec2 = Vec2::new(800.0, 380.0);
 const STAGE_TOP: f32 = 150.0;
 /// The man at the gate, in stage pixels.
 const MAN: Rect = Rect {
-    min: Vec2::new(520.0, 120.0),
-    max: Vec2::new(610.0, 270.0),
+    min: Vec2::new(515.0, 72.0),
+    max: Vec2::new(615.0, 270.0),
 };
+/// The rig is built for a 150px man; at the gate he stands closer.
+const MAN_SCALE: f32 = 1.3;
 const RIDER: Vec2 = Vec2::new(150.0, 131.0);
 const ROAD_Y: f32 = 170.0;
 const TALK_SECONDS: f32 = 7.0;
@@ -112,6 +114,9 @@ pub struct Game {
     flash: f32,
     /// Holding your breath (ambush).
     holding: bool,
+    /// Where your ball struck him (0 hat .. 1 boots), and which shot.
+    hit: Option<(f32, u32)>,
+    shots: u32,
     /// Who's at the gate, kept after the sim has closed the standoff.
     cast: Option<(
         bleeding_kansas::sim::NpcId,
@@ -141,6 +146,7 @@ impl Game {
         };
         self.seed = (now * 1e6) as u64 ^ 0x9E37_79B9_7F4A_7C15;
         self.cast = Some((s.actor, s.riders.clone(), s.yours));
+        self.hit = None;
         self.phase = match how {
             Approach::Talk => {
                 let m = action::moods(world, s.actor);
@@ -367,6 +373,7 @@ pub fn setup(mut commands: Commands, fonts: Res<Fonts>) {
                     BackgroundColor(Color::srgb(0.16, 0.13, 0.10)),
                     Act::Ground,
                 ));
+                crate::rig::spawn(s);
                 for i in 0..3 {
                     s.spawn((
                         ImageNode::default(),
@@ -704,6 +711,10 @@ pub fn play(
             if fire {
                 let at = game.aim + wander(t * 2.2, 26.0 * sway);
                 let shot = shot_at_man(at);
+                if shot != Shot::Miss {
+                    game.shots += 1;
+                    game.hit = Some(((at.y - MAN.min.y) / MAN.height(), game.shots));
+                }
                 action::draw(world, DrawEnd::Fired(shot));
                 game.flash = 1.0;
                 let clock =
@@ -874,6 +885,96 @@ fn tint(world: &World, id: bleeding_kansas::sim::NpcId) -> Color {
     }
 }
 
+/// The man at the gate, on his skeleton: the rifle comes up when his draw
+/// comes, points where you are, and a ball knocks back what it hits.
+pub fn figure(
+    time: Res<Time>,
+    game: Res<Game>,
+    sim: Res<Sim>,
+    mut motion: ResMut<crate::rig::Motion>,
+    art: Res<crate::rig::RigArt>,
+    images: Res<Assets<Image>>,
+    mut parts: crate::rig::PartQuery,
+) {
+    use crate::rig;
+    let world = &sim.0;
+    let actor = game.cast.as_ref().map(|c| c.0);
+    let gate = matches!(
+        game.phase,
+        Phase::Talk { .. }
+            | Phase::Stare { .. }
+            | Phase::Draw { .. }
+            | Phase::Aim { .. }
+            | Phase::After { .. }
+    );
+    let (Some(a), true) = (actor, gate) else {
+        motion.reset();
+        rig::paint(&[], &mut parts, &art, &images);
+        return;
+    };
+    let smooth = |x: f32| {
+        let x = x.clamp(0.0, 1.0);
+        x * x * (3.0 - 2.0 * x)
+    };
+    let n = world.npc(a);
+    let mut shake = 0.0;
+    let raise = match &game.phase {
+        Phase::Talk { .. } => {
+            if n.emotions.anger > 60.0 {
+                0.15
+            } else {
+                0.0
+            }
+        }
+        Phase::Stare { needle, .. } => {
+            shake = needle * 14.0;
+            0.25
+        }
+        Phase::Draw { t, cue, theirs } => smooth((t - cue - theirs + 0.2) / 0.2),
+        Phase::Aim {
+            t,
+            reaction,
+            theirs,
+            ..
+        } => smooth((reaction + t - theirs + 0.2) / 0.2),
+        _ => motion.raise,
+    };
+    if !matches!(game.phase, Phase::After { .. }) {
+        motion.raise = raise;
+    }
+    if let Some((y, id)) = game.hit {
+        motion.hit(y, id);
+    }
+    let after = matches!(game.phase, Phase::After { .. });
+    motion.step(time.delta_secs().min(0.05), !n.alive, after && n.wounded);
+    let (bad_arm, bad_leg) = rig::wounds(world, a);
+    let drive = rig::Drive {
+        feet: Vec2::new(MAN.center().x + shake, MAN.max.y - 2.0),
+        t: time.elapsed_secs(),
+        fear: (n.emotions.fear / 100.0).clamp(0.0, 1.0),
+        aim: Vec2::new(
+            STAGE.x / 2.0 + (game.aim.x - STAGE.x / 2.0) * 0.4,
+            STAGE.y - 30.0,
+        ),
+        raise,
+        knock: motion.knock,
+        fall: motion.fall,
+        kneel: motion.kneel,
+        bad_arm,
+        bad_leg,
+    };
+    let pieces: Vec<rig::Piece> = rig::pose(&rig::MAN, &drive, &rig::dress_of(world, a))
+        .into_iter()
+        .map(|p| rig::Piece {
+            a: drive.feet + (p.a - drive.feet) * MAN_SCALE,
+            b: drive.feet + (p.b - drive.feet) * MAN_SCALE,
+            thick: p.thick * MAN_SCALE,
+            ..p
+        })
+        .collect();
+    rig::paint(&pieces, &mut parts, &art, &images);
+}
+
 /// Paint whatever game is on.
 pub fn draw(
     game: Res<Game>,
@@ -936,11 +1037,8 @@ pub fn draw(
                     MAN.min + Vec2::new(shake, 0.0)
                 },
                 MAN.size(),
-                if down {
-                    Color::srgb(0.55, 0.25, 0.2)
-                } else {
-                    tint(world, a)
-                },
+                // The rig draws him (`figure`); the sprite only carries his name.
+                Color::NONE,
                 world.name(a).to_string(),
                 down,
             ));

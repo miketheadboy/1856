@@ -44,6 +44,10 @@ const FROM: [&str; 6] = [
 
 /// Stations to pass through before reaching free soil to the north.
 const STATIONS_TO_FREEDOM: u8 = 2;
+/// Below this private conviction, a Free-State heart can be bought by debt.
+const LUKEWARM: f32 = 0.3;
+/// Tiles (half a mile each) the word of a northbound wagon carries.
+const WAGON_WORD: f32 = 10.0;
 /// A reward, in dollars, for word that leads to a capture.
 const REWARD: u16 = 50;
 /// A conviction under the slave code, as a fine the county could collect.
@@ -129,7 +133,8 @@ pub fn daily(world: &mut World) {
                 move_on(world, i as u16, Some(f));
             } else {
                 // One more at the table: food, and someone may notice.
-                world.families[f as usize].stores.food -= 1.0;
+                let pantry = &mut world.families[f as usize].stores.food;
+                *pantry = (*pantry - 1.0).max(0.0);
                 notice(world, i, f);
             }
         }
@@ -254,15 +259,39 @@ pub fn answer_for(world: &mut World, family: FamilyId) -> Answer {
     let heart = n.ideology.private;
     let t = n.temperament;
     let fear = n.emotions.fear / 200.0;
+    // Fifty dollars is most of a year's debt at Dunmore's. A man owing it,
+    // or with hungry children, finds his convictions thinner than he thought.
+    let stores = &world.families[family as usize].stores;
+    let pressed = stores.debt >= super::economy::CREDIT_LIMIT / 2 || stores.hungry_days > 0;
+    // The second fifty dollars is easier than the first.
+    let sold = super::marks::has(world, head, super::marks::Mark::SoldAFugitive);
     if heart > 0.0 {
-        let p = 0.15 + 0.6 * heart + 0.2 * t.generosity + 0.1 * t.courage - fear;
+        if pressed && heart < LUKEWARM {
+            let sell =
+                0.3 * (1.0 - heart / LUKEWARM) * (1.0 - t.honesty) * if sold { 2.0 } else { 1.0 };
+            if world.rng.chance(sell) {
+                return Answer::Betray;
+            }
+        }
+        // Once you've hid someone, the next knock is easier (`marks`).
+        let kept = if super::marks::has(world, head, super::marks::Mark::KeptAStation) {
+            0.2
+        } else {
+            0.0
+        };
+        let p = 0.15 + 0.6 * heart + 0.2 * t.generosity + 0.1 * t.courage + kept - fear;
         if world.rng.chance(p.clamp(0.05, 0.95)) {
             return Answer::Shelter;
         }
         return Answer::TurnAway;
     }
     // The reward is fifty dollars.
-    let greed = 0.2 + 0.4 * (1.0 - t.honesty) + 0.3 * n.hidden.malice + 0.3 * -heart;
+    let greed = 0.2
+        + 0.4 * (1.0 - t.honesty)
+        + 0.3 * n.hidden.malice
+        + 0.3 * -heart
+        + if pressed { 0.2 } else { 0.0 }
+        + if sold { 0.25 } else { 0.0 };
     if world.rng.chance(greed.clamp(0.05, 0.9)) {
         Answer::Betray
     } else {
@@ -401,6 +430,43 @@ pub fn guide(world: &mut World, id: u16) -> bool {
 
 pub fn on_event(world: &mut World, ev: &WorldEvent) {
     match ev.kind {
+        // North by the Lane Trail, under the sacks: Iowa is free soil, and
+        // whoever is hid in the teamster's loft rides out with him. Nobody
+        // takes a fugitive down the Westport road into Missouri.
+        EventKind::WagonOut {
+            teamster,
+            route_west: false,
+            ..
+        } => {
+            // Word goes down the line that a wagon's going north: anyone hid
+            // in a house of his side within a morning's walk is brought over
+            // in the night before he hitches up.
+            let family = world.npc(teamster).family;
+            let side = world.npc(teamster).faction;
+            let yard = world.families[family as usize].farm;
+            let aboard: Vec<(u16, FamilyId)> = (0..world.railroad.seekers.len() as u16)
+                .filter_map(|i| match world.railroad.seekers[i as usize].status {
+                    Status::Hidden(f) => Some((i, f)),
+                    _ => None,
+                })
+                .filter(|&(_, f)| {
+                    f == family
+                        || (world.families[f as usize].faction == side
+                            && side == Faction::FreeState
+                            && distance(world.families[f as usize].farm, yard) <= WAGON_WORD)
+                })
+                .collect();
+            for (id, from) in aboard {
+                world.railroad.seekers[id as usize].status = Status::Free;
+                world.railroad.pursuit.retain(|p| p.0 != id);
+                for f in [from, family] {
+                    if !world.railroad.safe.contains(&f) {
+                        world.railroad.safe.push(f);
+                    }
+                }
+                world.emit_child(ev, EventKind::Freedom { seeker: id });
+            }
+        }
         EventKind::SeekerAtDoor { seeker, family } => {
             if family == 0 && !world.autopilot_player && world.player_alive() {
                 world.railroad.at_door = Some(seeker);

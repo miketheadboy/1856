@@ -34,6 +34,30 @@ pub fn suspect_label(world: &World, s: Suspect) -> String {
     }
 }
 
+/// What "nature" means depends on what happened: lightning for a barn,
+/// wolves for a cow, the water for a fever (the auditor of prose caught the
+/// county blaming lightning for typhoid).
+pub fn blame_label(world: &World, s: Suspect, about: EventId) -> String {
+    if s != Suspect::Nature {
+        return suspect_label(world, s);
+    }
+    match world.events[about as usize].kind {
+        EventKind::FellSick { .. } => "the water".into(),
+        EventKind::Strayed { .. }
+        | EventKind::Theft { .. }
+        | EventKind::Cruelty {
+            act: Cruelty::KillStock,
+            ..
+        } => "wolves".into(),
+        EventKind::Cruelty {
+            act: Cruelty::SpoilHay,
+            ..
+        } => "the weather".into(),
+        EventKind::Death { .. } => "the fever".into(),
+        _ => suspect_label(world, s),
+    }
+}
+
 fn cause_label(world: &World, cause: FireCause) -> String {
     match cause {
         FireCause::Lightning => "lightning".into(),
@@ -87,6 +111,14 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Some(k) if omniscient || k == PLAYER => format!(" by {}", who(world, k)),
                 _ => String::new(),
             };
+            if super::systems::fatal_wound(world, ev).is_some() {
+                let whose = if victim == PLAYER {
+                    "You".to_string()
+                } else {
+                    who(world, victim)
+                };
+                return format!("[DEATH] {whose} died of the wound, a fever in it{by}");
+            }
             if victim == PLAYER {
                 format!("[DEATH] You were killed{}", by)
             } else {
@@ -127,7 +159,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 if stray {
                     "nobody".to_string()
                 } else {
-                    suspect_label(world, blamed)
+                    blame_label(world, blamed, about)
                 },
                 confidence,
                 reason
@@ -149,12 +181,13 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             teller,
             listener,
             blamed,
+            about,
             ..
         } => format!(
             "[GOSSIP] {} tells {} it was {}",
             who(world, teller),
             who(world, listener),
-            suspect_label(world, blamed)
+            blame_label(world, blamed, about)
         ),
         EventKind::FactionGrievance {
             faction,
@@ -180,6 +213,11 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Hardship::Hunger => "starved",
                 Hardship::Cold => "froze",
                 Hardship::Fever => "died of a fever",
+                Hardship::Sickness(_) => "",
+            };
+            let how = match cause {
+                Hardship::Sickness(d) => format!("died of {}", d.label()),
+                _ => how.to_string(),
             };
             if victim == PLAYER {
                 format!("[DEATH] You {}", how)
@@ -195,6 +233,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             let what = match loot {
                 Loot::Cow => "A cow was taken",
                 Loot::Grain => "A sack of grain was taken",
+                Loot::Goods => "The trunks were gone through",
             };
             let place = if world.npc(victim).family == 0 {
                 "your place".to_string()
@@ -280,6 +319,9 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                     format!("[CRUELTY] The fence at {} was down in the morning{}", place, truth)
                 }
                 Cruelty::SpoilHay => format!("[CRUELTY] The hay at {} was rotting{}", place, truth),
+                Cruelty::FouledBlanket => {
+                    format!("[CRUELTY] Lice in the bedding at {}, from a blanket somebody gave{}", place, truth)
+                }
             }
         }
         EventKind::Trespass { family, nation } => format!(
@@ -459,6 +501,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 super::reconcile::Peace::Calamity => "trouble did it",
                 super::reconcile::Peace::Brokered => "someone talked them down",
                 super::reconcile::Peace::Marriage => "a wedding made them kin",
+                super::reconcile::Peace::Bee => "they shucked corn side by side",
             }
         ),
         EventKind::WhereWereYou { kin, errand, .. } => format!(
@@ -680,17 +723,121 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             joined,
             dodged,
             wounded,
+            padded,
             ..
         } => format!(
-            "[MUSTER] {}: {} rode out, {} stayed home{}",
+            "[MUSTER] {}: {} on the roll, {} stayed home{}{}",
             super::law::MUSTERS[index as usize].name,
-            joined,
+            joined as u16 + padded as u16,
             dodged,
             if wounded > 0 {
                 format!(", {wounded} came back shot")
             } else {
                 String::new()
+            },
+            if omniscient && padded > 0 {
+                format!(" [truth: {joined} rode; {padded} of the names were dead men]")
+            } else {
+                String::new()
             }
+        ),
+        EventKind::WagonOut {
+            teamster,
+            route_west,
+            orders,
+        } => format!(
+            "[WAGON] {} hitched up for {}{}",
+            who(world, teamster),
+            if route_west {
+                "Westport"
+            } else {
+                "the Lane Trail"
+            },
+            if orders > 0 {
+                format!(", with orders from {orders} neighbors")
+            } else {
+                String::new()
+            }
+        ),
+        EventKind::WagonBack {
+            teamster,
+            route_west,
+            tenths_of_a_ton,
+        } => format!(
+            "[WAGON] {} came home {} with {:.1} ton",
+            who(world, teamster),
+            if route_west {
+                "from the river"
+            } else {
+                "down the Lane Trail"
+            },
+            tenths_of_a_ton as f32 / 10.0
+        ),
+        EventKind::WagonStopped { teamster, seized } => format!(
+            "[WAGON] Missourians stopped {} on the Westport road and took the load (${seized})",
+            who(world, teamster)
+        ),
+        EventKind::MarkEarned { who: w, mark } => {
+            format!("[MARK] {} {}", who(world, w), mark.label())
+        }
+        EventKind::Remembered {
+            who: w,
+            mark,
+            years,
+        } => {
+            let ago = if years == 1 {
+                "a year".to_string()
+            } else {
+                format!("{years} years")
+            };
+            match mark {
+                super::marks::Mark::HasKilled => {
+                    format!("[MEMORY] The day of the killing, {ago} on: it comes back on {}", who(world, w))
+                }
+                super::marks::Mark::BuriedAChild => {
+                    format!("[MEMORY] The day of the burying, {ago} on: {} grieves again", who(world, w))
+                }
+                _ => format!(
+                    "[MEMORY] The fifty dollars are spent, and {} doesn't sleep",
+                    who(world, w)
+                ),
+            }
+        }
+        EventKind::Wake {
+            dead,
+            came,
+            stayed_away,
+        } => format!(
+            "[BURYING] {came} sat up with {}{}",
+            who(world, dead),
+            if stayed_away > 0 {
+                format!("; {stayed_away} who should have come kept away for fear of it")
+            } else {
+                String::new()
+            }
+        ),
+        EventKind::ShortWeight {
+            teamster,
+            noticed_by,
+        } => format!(
+            "[WAGON] {} says the order {} brought back from the river came up light",
+            who(world, noticed_by),
+            who(world, teamster)
+        ),
+        EventKind::Bigamy { bigamist, spouse } => format!(
+            "[SCANDAL] A letter from the States: {} has a living {} back home. The marriage to {} is undone",
+            who(world, bigamist),
+            if super::world::is_woman(&world.npc(bigamist).name) {
+                "husband"
+            } else {
+                "wife"
+            },
+            who(world, spouse)
+        ),
+        EventKind::RollPadded { name, index } => format!(
+            "[MUSTER] The {} roll carries the name of {}, who is dead",
+            super::law::MUSTERS[index as usize].name,
+            who(world, name)
         ),
         EventKind::BeeHeld { bee, host, crowd } => format!(
             "[NEIGHBORS] {} came to the {} {}",
@@ -943,7 +1090,42 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Retaliation::Ambush => "a rifle across the saddle",
             }
         ),
-        EventKind::Standoff { other, end, yours } => {
+        EventKind::Standoff {
+            other,
+            end,
+            yours,
+            law: true,
+        } => {
+            let o = who(world, other);
+            match (end, yours) {
+                (End::TalkedDown, false) => format!(
+                    "[LAW] You talked {o} and the posse off your place. The paper went back to Lecompton with them, for now"
+                ),
+                (End::FacedDown, false) => format!(
+                    "[LAW] {} and the posse backed off your gate. They'll be back with more",
+                    capitalize(&o)
+                ),
+                (End::BackedDown, false) => {
+                    format!("[LAW] You put your hands up for {o}. Lecompton, then")
+                }
+                (End::TalkedDown | End::FacedDown, true) => {
+                    format!("[LAW] {} came in on the paper without a shot", capitalize(&o))
+                }
+                (End::BackedDown, true) => {
+                    format!("[LAW] You rode out with the paper on {o} and came home without them")
+                }
+                (End::Shot { killed: true }, _) => {
+                    format!("[LAW] Guns out over a paper. {} is dead in the dirt", capitalize(&o))
+                }
+                (End::Shot { killed: false }, _) => {
+                    format!("[LAW] Guns out over a paper. You put a ball in {o}")
+                }
+                (End::Beaten, _) => format!("[LAW] Guns out over a paper. {} was quicker", capitalize(&o)),
+            }
+        }
+        EventKind::Standoff {
+            other, end, yours, ..
+        } => {
             let o = who(world, other);
             match (end, yours) {
                 (End::TalkedDown, false) => {
@@ -1027,6 +1209,217 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 String::new()
             }
         ),
+        EventKind::TurnedBack {
+            rider,
+            target,
+            watchman,
+        } => {
+            let seen = if omniscient {
+                format!(" ({} among them)", who(world, rider))
+            } else {
+                String::new()
+            };
+            match watchman {
+                Some(w) => format!(
+                    "[WATCH] Riders came up {} lane after dark{seen}. {} called out from the fence and they turned back",
+                    whose(world, target),
+                    capitalize(&who(world, w))
+                ),
+                None => format!(
+                    "[WATCH] Riders came up {} lane after dark{seen}, saw the hired men, and thought better of it",
+                    whose(world, target)
+                ),
+            }
+        }
+        EventKind::HandHired { hand, family } => format!(
+            "[HANDS] {} hired on at {} for ${} a month and board",
+            capitalize(&who(world, hand)),
+            house(world, family),
+            super::hands::WAGE
+        ),
+        EventKind::HandQuit {
+            hand,
+            family,
+            unpaid,
+        } => {
+            if unpaid {
+                format!(
+                    "[HANDS] {} walked off {} owed a month's wages, and said so in town",
+                    capitalize(&who(world, hand)),
+                    house(world, family)
+                )
+            } else {
+                format!(
+                    "[HANDS] {} was let go at {}",
+                    capitalize(&who(world, hand)),
+                    house(world, family)
+                )
+            }
+        }
+        EventKind::HandTalked { hand, family } => format!(
+            "[HANDS] {} talked at the groggery about what's kept in the loft at {}",
+            capitalize(&who(world, hand)),
+            house(world, family)
+        ),
+        EventKind::Hirelings {
+            company,
+            payer,
+            target,
+            printed,
+        } => {
+            let co = super::hands::COMPANIES[company as usize].name;
+            let paper = match super::hands::print_source(company) {
+                Source::Newspaper(p) => p.name(),
+                _ => "the paper",
+            };
+            match (target, printed) {
+                (None, false) => format!(
+                    "[HIRE] {} are sleeping in {} barn at so much a night",
+                    capitalize(co),
+                    whose(world, payer)
+                ),
+                (None, true) => format!(
+                    "[PAPER] The {paper} has it that {} keeps {co} in the barn",
+                    who(world, payer)
+                ),
+                (Some(t), false) => format!(
+                    "[HIRE] {} paid {co} to ride on {} place tonight",
+                    capitalize(&who(world, payer)),
+                    whose(world, t)
+                ),
+                (Some(t), true) => format!(
+                    "[PAPER] The {paper} names {} as the one who paid {co} to ride on {}",
+                    who(world, payer),
+                    who(world, t)
+                ),
+            }
+        }
+        EventKind::FellSick { who: w, disease } => {
+            if w == PLAYER {
+                format!("[SICK] You're down with {}", disease.label())
+            } else {
+                format!("[SICK] {} is down with {}", capitalize(&who(world, w)), disease.label())
+            }
+        }
+        EventKind::Recovered { who: w, disease } => format!(
+            "[SICK] {} up again after {}",
+            capitalize(&who(world, w)),
+            disease.label()
+        ),
+        EventKind::Epidemic { disease } => format!(
+            "[RIVER] {} at Westport and Kansas City. The boats keep coming",
+            capitalize(disease.label())
+        ),
+        EventKind::DoctorCalled { family } => format!(
+            "[SICK] {} rode out to {}",
+            super::sickness::DOCTOR,
+            house(world, family)
+        ),
+        EventKind::Gift { from, to } => format!(
+            "[KIND] {} brought {} a blanket against the cold",
+            capitalize(&who(world, from)),
+            who(world, to)
+        ),
+        EventKind::Looted {
+            looter,
+            victim,
+            pieces,
+            ..
+        } => format!(
+            "[BLOOD] {} went through {} pockets and came away with {} thing{}",
+            capitalize(&who(world, looter)),
+            whose(world, victim),
+            pieces,
+            if pieces == 1 { "" } else { "s" }
+        ),
+        EventKind::Warrant {
+            accused,
+            about,
+            bounty,
+        } => format!(
+            "[LAW] The justice wrote a paper on {} for {}. ${} on delivery",
+            who(world, accused),
+            charge(world, about),
+            bounty
+        ),
+        EventKind::PosseOut {
+            accused,
+            leader,
+            men,
+            found,
+        } => {
+            if !found {
+                format!(
+                    "[LAW] {} and {} men came for {} with a paper and found nobody home. They turned the place over looking",
+                    capitalize(&who(world, leader)),
+                    men.saturating_sub(1),
+                    who(world, accused)
+                )
+            } else if men <= 1 {
+                format!(
+                    "[LAW] {} rode out alone after the price on {}",
+                    capitalize(&who(world, leader)),
+                    who(world, accused)
+                )
+            } else {
+                format!(
+                    "[LAW] {} rode out with {} men and a paper on {}",
+                    capitalize(&who(world, leader)),
+                    men - 1,
+                    who(world, accused)
+                )
+            }
+        }
+        EventKind::Arrested { accused, by } => format!(
+            "[LAW] {} taken in by {}",
+            capitalize(&who(world, accused)),
+            who(world, by)
+        ),
+        EventKind::Tried {
+            accused,
+            judge,
+            convicted,
+            days,
+            fine,
+        } => {
+            if convicted {
+                format!(
+                    "[LAW] Justice {} found {} guilty: {} days in the Lecompton jail and ${} costs",
+                    world.name(judge),
+                    who(world, accused),
+                    days,
+                    fine
+                )
+            } else {
+                format!(
+                    "[LAW] Justice {} let {} go. Nobody on either side liked it",
+                    world.name(judge),
+                    who(world, accused)
+                )
+            }
+        }
+        EventKind::Fled { accused, days } => {
+            if accused == PLAYER {
+                format!("[LAW] You lit out for the States ahead of the paper. Six weeks, maybe more ({days} days)")
+            } else {
+                format!(
+                    "[LAW] {} lit out ahead of the posse. Missouri, some say; Iowa, say others",
+                    capitalize(&who(world, accused))
+                )
+            }
+        }
+        EventKind::BountyPaid {
+            hunter,
+            accused,
+            dollars,
+            dead,
+        } => format!(
+            "[LAW] {} collected ${} on {}{}",
+            capitalize(&who(world, hunter)),
+            dollars,
+            who(world, accused),
+            if dead { ", dead" } else { "" }
+        ),
         EventKind::Retaliation {
             actor,
             target,
@@ -1040,6 +1433,22 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 Retaliation::Ambush => "with a rifle",
             }
         ),
+    }
+}
+
+/// What a warrant says someone did, for the view.
+pub fn charge_line(world: &World, about: EventId) -> String {
+    charge(world, about)
+}
+
+/// What a warrant says a man did.
+fn charge(world: &World, about: EventId) -> String {
+    match world.events[about as usize].kind {
+        EventKind::Death { victim, .. } => format!("the killing of {}", who(world, victim)),
+        EventKind::Wounded { victim, .. } => format!("shooting {}", who(world, victim)),
+        EventKind::ShotAt { target, .. } => format!("shooting at {}", who(world, target)),
+        EventKind::Fire { owner, .. } => format!("burning {} barn", whose(world, owner)),
+        _ => "a violent act".into(),
     }
 }
 
@@ -1081,6 +1490,25 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
         EventKind::Retaliation { .. } | EventKind::Spared { .. } => omniscient,
         EventKind::Prowler { seen, .. } => omniscient || seen > 0,
         EventKind::ArmsArrived { family, .. } => omniscient || family == 0,
+        EventKind::HandTalked { .. } => omniscient,
+        // What a man did in the dark is his own; the county sees the rest.
+        EventKind::MarkEarned { mark, .. } | EventKind::Remembered { mark, .. } => {
+            omniscient || mark.public()
+        }
+        EventKind::WagonOut { teamster, .. } | EventKind::WagonBack { teamster, .. } => {
+            omniscient || teamster == PLAYER
+        }
+        // The captain's secret, until the roll is read.
+        EventKind::RollPadded { .. } => omniscient,
+        // Sickness in the county is known house by house, and loudly when
+        // it kills; the chronicle keeps to your house and the dead.
+        EventKind::FellSick { who: w, .. } | EventKind::Recovered { who: w, .. } => {
+            omniscient || world.npc(w).family == 0
+        }
+        EventKind::DoctorCalled { family } => omniscient || family == 0,
+        EventKind::Gift { from, .. } => omniscient || from == PLAYER,
+        EventKind::Looted { looter, seen, .. } => omniscient || looter == PLAYER || seen,
+        EventKind::Hirelings { payer, printed, .. } => omniscient || payer == PLAYER || printed,
         EventKind::Searched { family, seized } => omniscient || family == 0 || seized > 0,
         EventKind::SeekerAtDoor { family, .. }
         | EventKind::Sheltered { family, .. }

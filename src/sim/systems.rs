@@ -5,7 +5,7 @@ use super::attribution::{self, Rumor};
 use super::character::{self, Archetype};
 use super::economy;
 use super::events::Cruelty;
-use super::events::{EventKind, FireCause, Retaliation, Source, Suspect, WorldEvent};
+use super::events::{EventId, EventKind, FireCause, Retaliation, Source, Suspect, WorldEvent};
 use super::psyche::{self, LifeStage};
 use super::world::{Faction, MemoryRef, NpcId, PLAYER, World, distance};
 
@@ -22,6 +22,7 @@ pub const ACCUSATION_CONFIDENCE: u8 = 20;
 pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     fire_system(world, ev);
     death_system(world, ev);
+    wound_death_system(world, ev);
     perception_system(world, ev);
     grief_system(world, ev);
     gossip_system(world, ev);
@@ -48,6 +49,13 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::market::on_event(world, ev);
     super::action::on_event(world, ev);
     super::arms::on_event(world, ev);
+    super::hands::on_event(world, ev);
+    super::warrant::on_event(world, ev);
+    super::wardrobe::on_event(world, ev);
+    super::sickness::on_event(world, ev);
+    super::freight::on_event(world, ev);
+    super::marks::on_event(world, ev);
+    super::nations::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.
@@ -146,7 +154,107 @@ fn grief_system(world: &mut World, ev: &WorldEvent) {
 }
 
 /// Who learns about a harm right away, and what they conclude (§11).
+/// The common law's year and a day: a man who dies of a wound within a year
+/// and a day of taking it was killed by whoever gave it to him. A fever or a
+/// wound gone bad takes a wounded man as a killing, linked to the shot.
+/// Returns the event to emit and what caused it.
+pub fn perished(
+    world: &World,
+    victim: NpcId,
+    cause: super::events::Hardship,
+) -> (EventKind, Option<EventId>) {
+    use super::events::Hardship;
+    use super::sickness::Disease;
+    let wound_death = match cause {
+        Hardship::Sickness(Disease::WoundFever) => true,
+        Hardship::Fever => world.npc(victim).wounded,
+        _ => false,
+    };
+    let dead = EventKind::Perished { victim, cause };
+    if !wound_death {
+        return (dead, None);
+    }
+    let since = world.day.0.saturating_sub(366);
+    let shot = world
+        .events
+        .iter()
+        .rev()
+        .take_while(|e| e.day.0 >= since)
+        .find_map(|e| match e.kind {
+            EventKind::Wounded {
+                victim: v,
+                attacker,
+            } if v == victim && attacker != victim => Some((e.id, attacker)),
+            _ => None,
+        });
+    match shot {
+        Some((wound, attacker)) => (
+            EventKind::Death {
+                victim,
+                killer: Some(attacker),
+            },
+            Some(wound),
+        ),
+        None => (dead, None),
+    }
+}
+
+/// The wound that killed him, if this death came late from a shooting: a
+/// death caused by a wound to the same man, from the same hand. (A killing
+/// *for* a wound, revenge on the shooter, has a different victim.)
+pub fn fatal_wound(world: &World, ev: &WorldEvent) -> Option<EventId> {
+    let EventKind::Death { victim, killer } = ev.kind else {
+        return None;
+    };
+    let w = ev.caused_by?;
+    match world.events[w as usize].kind {
+        EventKind::Wounded {
+            victim: v,
+            attacker,
+        } if v == victim && killer == Some(attacker) => Some(w),
+        _ => None,
+    }
+}
+
+/// He died in his bed, weeks after the shot. Nobody witnesses that: what
+/// each person believed about the shooting becomes what they believe about
+/// the killing. The shooter's own side, as often as not, says it was the
+/// fever that took him and not the ball, and the county has two stories.
+fn wound_death_system(world: &mut World, ev: &WorldEvent) {
+    let Some(wound) = fatal_wound(world, ev) else {
+        return;
+    };
+    let held: Vec<(NpcId, MemoryRef)> = world
+        .living()
+        .filter_map(|n| n.memory_of(wound).map(|m| (n.id, m.clone())))
+        .collect();
+    for (holder, m) in held {
+        let own_side = matches!(m.believed, Suspect::Person(p)
+            if world.npc(p).faction == world.npc(holder).faction);
+        let (blamed, reason) = if own_side && world.rng.chance(0.6) {
+            (Suspect::Nature, "a fever took him, not the ball")
+        } else {
+            (m.believed, "died of the wound")
+        };
+        world.emit_child(
+            ev,
+            EventKind::Belief {
+                holder,
+                about: ev.id,
+                blamed,
+                confidence: m.confidence,
+                source: m.source,
+                reason,
+            },
+        );
+    }
+}
+
 fn perception_system(world: &mut World, ev: &WorldEvent) {
+    // A death in bed from an old wound has no witnesses of its own.
+    if fatal_wound(world, ev).is_some() {
+        return;
+    }
     let (victim, actor, is_death) = match ev.kind {
         EventKind::Fire { owner, cause, .. } => (
             owner,
@@ -222,7 +330,8 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
             } else {
                 1.0
             };
-            (1.0 - 0.6 * n.body.stealth) * ghost
+            let clothes = n.outfit.bonus().stealth;
+            (1.0 - 0.6 * (n.body.stealth + clothes).clamp(0.0, 1.0)) * ghost
         });
         let keen = 0.6 + 0.8 * world.npc(observer).body.alertness;
         // Timber hides a rider; open prairie shows him for miles (§7.4).
@@ -231,6 +340,20 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         let saw = match eyewitness {
             Some(seen) => actor.filter(|_| seen),
             None => actor.filter(|_| world.rng.chance(sight * hidden * keen * terrain)),
+        };
+        // Seeing isn't knowing. By a thin moon, across a field, with a gun
+        // going off, a witness matches the shape to a man they half expected.
+        // Staged scenes already decided who saw the player's face.
+        let saw = match (saw, eyewitness) {
+            (Some(culprit), None) => Some(identify(
+                world,
+                observer,
+                culprit,
+                ev,
+                stakeholder,
+                is_death,
+            )),
+            (s, _) => s,
         };
         if !stakeholder {
             psyche::feel(world, observer, |e| e.fear += 10.0);
@@ -245,7 +368,26 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
                 reason: "saw it with their own eyes",
             },
             None => {
-                let v = attribution::judge(world, observer, ev.id, None);
+                // No face, but maybe a red shirt in the lantern light: the
+                // colors point at a side, and the observer picks the man of
+                // that side they'd have suspected anyway (`wardrobe`).
+                let colors = actor.and_then(|a| super::wardrobe::colors_of(world, a));
+                let rumor = match colors {
+                    Some(side) if world.rng.chance((1.5 * sight * keen * terrain).min(0.8)) => {
+                        attribution::candidates(world, observer, ev.id, None)
+                            .into_iter()
+                            .filter(|c| {
+                                matches!(c.suspect, Suspect::Person(p) if world.npc(p).faction == side)
+                            })
+                            .max_by(|a, b| a.score.total_cmp(&b.score))
+                            .map(|c| attribution::Rumor {
+                                suspect: c.suspect,
+                                strength: 1.5,
+                            })
+                    }
+                    _ => None,
+                };
+                let v = attribution::judge(world, observer, ev.id, rumor);
                 EventKind::Belief {
                     holder: observer,
                     about: ev.id,
@@ -262,6 +404,66 @@ fn perception_system(world: &mut World, ev: &WorldEvent) {
         };
         world.emit_child(ev, belief);
     }
+}
+
+/// The odds a witness puts the right name to the shape they saw (Wells &
+/// Loftus: light, distance, stress, a weapon, and whether the face was a
+/// stranger's). Neighbors known by sight under a full moon are nearly always
+/// right; a stranger on the other side, by starlight, is a coin toss.
+pub fn identify_odds(world: &World, observer: NpcId, culprit: NpcId, ev: &WorldEvent) -> f32 {
+    let o = world.npc(observer);
+    let light = 0.7 + 0.3 * world.night_light(ev.day);
+    let d = distance(world.farm_of(observer), world.farm_of(culprit));
+    // A county of a few dozen souls: everyone is known by sight from the
+    // store and the land office. Close neighbors best; the other side's men,
+    // who don't come to your meetings, a little less.
+    let known = if o.family == world.npc(culprit).family || d <= 6.0 {
+        1.0
+    } else if o.faction == world.npc(culprit).faction {
+        0.93
+    } else {
+        0.87
+    };
+    let fright = 1.0 - 0.3 * (o.emotions.fear / 100.0);
+    let keen = 0.8 + 0.2 * o.body.alertness;
+    (light * known * fright * keen).clamp(0.15, 0.97)
+}
+
+/// Put a name to it. When the face is wrong it's rarely random: the witness
+/// names the man of the same side they'd have suspected anyway, and is just
+/// as sure (confidence doesn't track accuracy).
+fn identify(
+    world: &mut World,
+    observer: NpcId,
+    culprit: NpcId,
+    ev: &WorldEvent,
+    stakeholder: bool,
+    violent: bool,
+) -> NpcId {
+    let mut p = identify_odds(world, observer, culprit, ev);
+    if !stakeholder {
+        // Across the section line, not in the yard.
+        let d = distance(world.farm_of(observer), world.farm_of(culprit));
+        p *= (1.0 - 0.02 * d).clamp(0.7, 1.0);
+    }
+    if violent {
+        // Weapon focus: you watch the muzzle, not the face.
+        p *= 0.9;
+    }
+    if world.rng.chance(p) {
+        return culprit;
+    }
+    let side = world.npc(culprit).faction;
+    attribution::candidates(world, observer, ev.id, None)
+        .into_iter()
+        .filter_map(|c| match c.suspect {
+            Suspect::Person(x) if x != culprit && x != observer && world.npc(x).faction == side => {
+                Some((x, c.score))
+            }
+            _ => None,
+        })
+        .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
+        .map_or(culprit, |c| c.0)
 }
 
 /// Rumors mutate on retelling: the listener runs their own attribution,
@@ -288,7 +490,13 @@ fn gossip_system(world: &mut World, ev: &WorldEvent) {
     let doubt = 1.0 - 0.5 * world.npc(listener).temperament.skepticism;
     let rumor = Rumor {
         suspect: blamed,
-        strength: 45.0 * trust * doubt * character::rumor_weight(world, teller),
+        // Testimonial injustice (Fricker): the same words weigh less from a
+        // woman, a beggar, a newcomer or a jailbird (`standing`).
+        strength: 45.0
+            * trust
+            * doubt
+            * character::rumor_weight(world, teller)
+            * super::standing::word(world, teller),
     };
     let v = attribution::judge(world, listener, about, Some(rumor));
     if let Some((believed, confidence)) = prior
@@ -330,6 +538,7 @@ fn belief_system(world: &mut World, ev: &WorldEvent) {
     let is_theft = matches!(about_kind, EventKind::Theft { .. });
     let is_wound = matches!(about_kind, EventKind::Wounded { .. });
     let is_cruelty = matches!(about_kind, EventKind::Cruelty { .. });
+    let is_fever = matches!(about_kind, EventKind::FellSick { .. });
     let stake = if is_stakeholder(world, holder, victim) {
         1.0
     } else {
@@ -372,6 +581,9 @@ fn belief_system(world: &mut World, ev: &WorldEvent) {
             35.0
         } else if is_theft {
             30.0
+        } else if is_fever {
+            // A suspicion about a fever: it sours, it doesn't inflame.
+            20.0
         } else {
             45.0
         };
@@ -490,6 +702,7 @@ fn opinion_system(world: &mut World, ev: &WorldEvent) {
         || !h.alive
         || !able
         || h.plotting.is_some()
+        || super::warrant::held(world, holder)
         || cooling
         || !world.npc(target).alive
     {
@@ -570,7 +783,22 @@ pub fn resolve_plot(
     caused_by: Option<super::events::EventId>,
 ) -> Option<Retaliation> {
     world.npc_mut(actor).plotting = None;
-    if !world.npc(actor).alive || !world.npc(target).alive {
+    if !world.npc(actor).alive || !world.npc(target).alive || super::warrant::held(world, actor) {
+        return None;
+    }
+    // A man in the Lecompton jail, gone to the States or down the road
+    // with a wagon isn't home to be shot; his barn still is. A man on the
+    // road isn't here to ride on anybody.
+    if method == Retaliation::Ambush
+        && (super::warrant::held(world, target) || super::freight::away(world, target))
+    {
+        return None;
+    }
+    if super::freight::away(world, actor) {
+        return None;
+    }
+    // Someone sat up with a rifle and called out at the fence.
+    if super::hands::turn_back(world, actor, target, caused_by) {
         return None;
     }
     if let Some(why) = super::reconcile::mercy(world, actor, target, method) {
@@ -635,9 +863,20 @@ fn wound_system(world: &mut World, ev: &WorldEvent) {
     let EventKind::Wounded { victim, .. } = ev.kind else {
         return;
     };
+    // Where it went in: the chest is the biggest mark, the head the rarest.
+    let roll = world.rng.unit();
+    let limb = match roll {
+        r if r < 0.08 => psyche::Limb::Head,
+        r if r < 0.40 => psyche::Limb::Chest,
+        r if r < 0.62 => psyche::Limb::GunArm,
+        r if r < 0.75 => psyche::Limb::OffArm,
+        _ => psyche::Limb::Leg,
+    };
     let n = world.npc_mut(victim);
     n.wounded = true;
-    n.health = (n.health - 45).max(1);
+    n.hurt = Some(limb);
+    let blow = if limb == psyche::Limb::Head { 60 } else { 45 };
+    n.health = (n.health - blow).max(1);
     n.emotions.fear += 30.0;
     n.emotions.anger += 30.0;
 }
@@ -682,6 +921,8 @@ fn cruelty_system(world: &mut World, ev: &WorldEvent) {
         Cruelty::SpoilHay => {
             world.families[family as usize].stores.work.hay *= 0.3;
         }
+        // The lice move in (`sickness`); the fear comes with the itch.
+        Cruelty::FouledBlanket => {}
     }
 }
 
@@ -740,6 +981,50 @@ fn favor_system(world: &mut World, ev: &WorldEvent) {
 }
 
 /// Daily: people with a fresh accusation tell someone (§14.2 gossip clock).
+/// Allport & Postman's basic law of rumor: how much a thing is talked of
+/// goes as its importance times its ambiguity. A killing nobody can pin on
+/// anyone runs the county; a stray cow everyone agrees got through the fence
+/// dies on the porch. Scaled so an ordinary grudge-fire is about 1.
+pub fn talkability(world: &World, about: EventId) -> f32 {
+    let importance = match world.events[about as usize].kind {
+        EventKind::Death { .. } => 1.0,
+        EventKind::Wounded { .. } | EventKind::ShotAt { .. } => 0.8,
+        EventKind::Fire { .. } | EventKind::Captured { .. } => 0.7,
+        EventKind::Cruelty { .. } | EventKind::Prowler { .. } => 0.55,
+        EventKind::Theft { .. } => 0.45,
+        _ => 0.25,
+    };
+    // Ambiguity: how split the county's minds are. One name on every tongue
+    // is settled; five names is a story that keeps.
+    let mut names: Vec<(Suspect, u32)> = Vec::new();
+    for n in world.living() {
+        if let Some(m) = n.memory_of(about) {
+            match names.iter_mut().find(|x| x.0 == m.believed) {
+                Some(x) => x.1 += 1,
+                None => names.push((m.believed, 1)),
+            }
+        }
+    }
+    let total: u32 = names.iter().map(|x| x.1).sum();
+    let top = names.iter().map(|x| x.1).max().unwrap_or(0);
+    let ambiguity = if total == 0 {
+        1.0
+    } else {
+        1.0 - top as f32 / total as f32
+    };
+    (importance * (0.5 + ambiguity) / 0.6).clamp(0.2, 2.5)
+}
+
+/// Frightened people talk (Rosnow): rumor is how a county handles dread.
+/// 1.0 in a calm county, up to 1.6 when fear runs high.
+pub fn county_fear(world: &World) -> f32 {
+    let (sum, n) = world
+        .living()
+        .fold((0.0, 0.0), |(s, n), p| (s + p.emotions.fear, n + 1.0));
+    let mean = if n > 0.0 { sum / n } else { 0.0 };
+    1.0 + (mean / 50.0).min(0.6)
+}
+
 pub fn spread_gossip(world: &mut World) {
     let today = world.day.0;
     let mut tellings = Vec::new();
@@ -762,9 +1047,11 @@ pub fn spread_gossip(world: &mut World) {
         }
     }
     let mut told_today = std::collections::HashSet::new();
+    let dread = county_fear(world);
     for (teller, about, blamed) in tellings {
         let t = world.npc(teller);
-        let talk = 0.15 + 0.4 * t.temperament.sociability + t.emotions.zeal / 250.0;
+        let mouth = 0.15 + 0.4 * t.temperament.sociability + t.emotions.zeal / 250.0;
+        let talk = (mouth * talkability(world, about) * dread).min(0.95);
         if !world.rng.chance(talk) {
             continue;
         }
@@ -781,6 +1068,7 @@ pub fn spread_gossip(world: &mut World) {
             continue;
         };
         told_today.insert((listener, about));
+        let blamed = sharpen(world, teller, about, blamed).unwrap_or(blamed);
         world.emit_root(
             EventKind::Gossip {
                 teller,
@@ -791,4 +1079,49 @@ pub fn spread_gossip(world: &mut World) {
             Some(about),
         );
     }
+}
+
+/// Bartlett's reconstructive memory, and Allport & Postman's sharpening:
+/// each time a story is told it settles a little closer to what the teller
+/// already thought of people. "Someone of the Holt crowd" becomes Cyrus
+/// Holt, whom he never liked. The teller's own memory moves first (a Belief
+/// of his own, so the books agree), then he passes on the new version. The
+/// honest and the certain hold their stories; the zealous bend them.
+fn sharpen(world: &mut World, teller: NpcId, about: EventId, blamed: Suspect) -> Option<Suspect> {
+    let Suspect::Person(named) = blamed else {
+        return None;
+    };
+    let t = world.npc(teller);
+    let m = t.memory_of(about)?;
+    if m.confidence >= 100 {
+        return None;
+    }
+    let (confidence, source) = (m.confidence, m.source);
+    let p = 0.12 * (1.0 - t.temperament.honesty) * (1.0 + t.emotions.zeal / 100.0);
+    let family = t.family;
+    if !world.rng.chance(p) {
+        return None;
+    }
+    let side = world.npc(named).faction;
+    let held = world.opinion(teller, named);
+    let other = world
+        .living()
+        .filter(|n| n.id != named && n.id != teller && n.id != PLAYER && n.family != family)
+        .filter(|n| n.faction == side && LifeStage::of(n.age) != LifeStage::Child)
+        .map(|n| (n.id, world.opinion(teller, n.id)))
+        .filter(|&(_, o)| o <= held - 20)
+        .min_by_key(|&(id, o)| (o, id))?
+        .0;
+    world.emit_root(
+        EventKind::Belief {
+            holder: teller,
+            about,
+            blamed: Suspect::Person(other),
+            confidence: confidence + 1,
+            source,
+            reason: "the story sharpened in the telling",
+        },
+        Some(about),
+    );
+    Some(Suspect::Person(other))
 }

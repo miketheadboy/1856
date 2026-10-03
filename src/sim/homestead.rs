@@ -88,10 +88,16 @@ pub fn build(world: &mut World, family: FamilyId, imp: Improvement, hands: f32) 
         hh.goods[Good::Timber.index()] -= timber;
         hh.improvements.building = Some((imp, 0.0));
     }
+    // Nails and a bit of iron, or pegs and patience.
+    let iron = &mut hh.goods[Good::Iron.index()];
+    let nailed = *iron >= 0.5;
+    if nailed {
+        *iron -= 0.5;
+    }
     let Some((_, done)) = hh.improvements.building.as_mut() else {
         return false;
     };
-    *done += hands;
+    *done += hands * if nailed { 1.0 } else { 0.6 };
     if *done >= days {
         hh.improvements.building = None;
         hh.improvements.built |= imp.bit();

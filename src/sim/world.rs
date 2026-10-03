@@ -100,6 +100,15 @@ pub struct Npc {
     pub adopted_by: Option<NationId>,
     /// Sold out and went back to the States.
     pub departed: bool,
+    /// Hat to boots, and where each piece came from (`wardrobe`).
+    pub outfit: super::wardrobe::Outfit,
+    /// Where the current wound is (`psyche::Limb`), while it heals.
+    pub hurt: Option<super::psyche::Limb>,
+    /// Old wounds that healed crooked, as `Limb::bit` flags.
+    pub scars: u8,
+    /// Day they came into the county; None for those here at the start.
+    /// New faces have no one to vouch for them (`standing`).
+    pub arrived: Option<Day>,
 }
 
 impl Npc {
@@ -242,6 +251,18 @@ pub struct World {
     pub railroad: super::railroad::Railroad,
     /// Standoffs at the gate, and who saw what the player played out.
     pub action: super::action::Action,
+    /// Who works your place and who watches it; hired guns.
+    pub hands: super::hands::Hands,
+    /// Papers the justice has written, and who's in his jail.
+    pub warrants: super::warrant::Warrants,
+    /// Your trunk, and who's recognized what you wear.
+    pub wardrobe: super::wardrobe::Wardrobe,
+    /// Who's sick with what, who's immune, lice, fouled wells, epidemics.
+    pub sickness: super::sickness::Sickness,
+    /// Wagons on the road to the river (`freight`).
+    pub freight: super::freight::Freight,
+    /// What lives have left on people (`marks`).
+    pub marks: super::marks::Marks,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -267,9 +288,37 @@ const GIVEN_NAMES: [&str; 32] = [
 ];
 
 /// Given names that were women's in 1855. Marriage law was one man, one woman.
-const WOMEN: [&str; 15] = [
-    "Martha", "Ruth", "Clara", "Ada", "Sarah", "Lydia", "Hannah", "Abigail", "Maggie", "Louise",
-    "Prudence", "Delia", "Hester", "Ramona", "Johanna",
+/// Newcomers by mail and babies born in the county are on the list too.
+const WOMEN: [&str; 29] = [
+    "Martha",
+    "Ruth",
+    "Clara",
+    "Ada",
+    "Sarah",
+    "Lydia",
+    "Hannah",
+    "Abigail",
+    "Maggie",
+    "Louise",
+    "Prudence",
+    "Delia",
+    "Hester",
+    "Ramona",
+    "Johanna",
+    "Eliza",
+    "Mercy",
+    "Harriet",
+    "Phoebe",
+    "Temperance",
+    "Charity",
+    "Lucy",
+    "Mary",
+    "Emma",
+    "Ellen",
+    "Nancy",
+    "Lorinda",
+    "Belle",
+    "Susannah",
 ];
 
 pub fn is_woman(name: &str) -> bool {
@@ -333,7 +382,7 @@ impl World {
                     seed: acres,
                     acres,
                     cattle: rng.range(1, 7),
-                    oxen: rng.range(0, 3),
+                    oxen: rng.range(1, 4),
                     cash: rng.range(0, 25) as i32,
                     prudence: rng.unit(),
                     proud: rng.chance(0.3),
@@ -400,6 +449,10 @@ impl World {
             hidden: Hidden::default(),
             adopted_by: None,
             departed: false,
+            outfit: Default::default(),
+            hurt: None,
+            scars: 0,
+            arrived: None,
         }];
         let mut given: Vec<&str> = GIVEN_NAMES.to_vec();
         for family in families.iter() {
@@ -452,6 +505,10 @@ impl World {
                     hidden,
                     adopted_by: None,
                     departed: false,
+                    outfit: Default::default(),
+                    hurt: None,
+                    scars: 0,
+                    arrived: None,
                 });
             }
         }
@@ -494,6 +551,12 @@ impl World {
             land: super::land::Land::default(),
             railroad: super::railroad::Railroad::default(),
             action: super::action::Action::default(),
+            hands: super::hands::Hands::default(),
+            warrants: super::warrant::Warrants::default(),
+            wardrobe: super::wardrobe::Wardrobe::default(),
+            sickness: super::sickness::Sickness::default(),
+            freight: Default::default(),
+            marks: Default::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {
@@ -512,6 +575,19 @@ impl World {
                 .filter(|n| n.family == f as FamilyId)
                 .count() as f32;
             world.families[f].stores.food = m * (120.0 + world.rng.range(0, 110) as f32);
+        }
+        // What came out on the wagon: side meat, a sack of coffee, a bolt
+        // of cloth, a keg of nails. No garden: the sod was broken too late
+        // in 1855 to plant one (`larder`).
+        for f in &mut world.families {
+            if f.store {
+                continue;
+            }
+            let hh = &mut f.stores;
+            hh.larder.meat_share = 0.25;
+            hh.goods[Good::Coffee.index()] = 6.0;
+            hh.goods[Good::Cloth.index()] = 3.0;
+            hh.goods[Good::Iron.index()] = 3.0;
         }
 
         // Old grudges from before the game starts: people mostly blame
@@ -536,6 +612,8 @@ impl World {
         world.civic = super::civic::Civic::founding(&mut world);
         world.law = super::law::Law::founding(&world);
         super::arms::founding(&mut world);
+        super::wardrobe::founding(&mut world);
+        super::sickness::founding(&mut world);
         world
     }
 
@@ -570,7 +648,12 @@ impl World {
             hidden,
             adopted_by: None,
             departed: false,
+            outfit: Default::default(),
+            hurt: None,
+            scars: 0,
+            arrived: Some(self.day),
         });
+        self.npcs[id as usize].outfit = super::wardrobe::dress(self, id);
         id
     }
 
@@ -698,6 +781,15 @@ impl World {
         caused_by: Option<EventId>,
         cascade_depth: u8,
     ) -> EventId {
+        // A man dies once. Two systems can each kill him in the same tick
+        // (a fever and the wound it came from) before either death lands;
+        // the second is the first (the auditor caught Samuel Reed dying of
+        // both on one February day).
+        if let EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } = kind
+            && let Some(first) = self.death_of(victim)
+        {
+            return first;
+        }
         let id = self.events.len() as EventId;
         self.events.push(WorldEvent {
             id,
@@ -709,6 +801,21 @@ impl World {
         });
         self.pending.push_back(id);
         id
+    }
+
+    /// The event that killed this person, if one is in the log.
+    pub fn death_of(&self, victim: NpcId) -> Option<EventId> {
+        let alive = self.npcs.get(victim as usize).is_some_and(|n| n.alive);
+        // The living can only have a death queued today; the dead, any day.
+        let today = self.day;
+        self.events
+            .iter()
+            .rev()
+            .take_while(|e| !alive || e.day == today)
+            .find(|e| {
+                matches!(e.kind, EventKind::Death { victim: v, .. } | EventKind::Perished { victim: v, .. } if v == victim)
+            })
+            .map(|e| e.id)
     }
 
     /// Start a new chain. `caused_by` links it to whatever set it in motion
@@ -771,16 +878,23 @@ impl World {
         history::daily(self);
         market::daily(self);
         economy::daily(self);
+        super::larder::daily(self);
+        super::freight::daily(self);
         psyche::daily(self);
         character::daily_evil(self);
         super::ghosts::daily(self);
         super::mortality::daily(self);
+        super::sickness::daily(self);
+        super::sickness::tend(self);
         super::family::daily(self);
         super::farmwork::daily(self);
         super::homestead::daily(self);
         super::mail::daily(self);
         super::arms::daily(self);
+        super::hands::daily(self);
         super::law::daily(self);
+        super::warrant::daily(self);
+        super::wardrobe::daily(self);
         super::bees::daily(self);
         super::railroad::daily(self);
         super::civic::daily(self);
@@ -791,6 +905,11 @@ impl World {
             self.monthly();
         }
         self.run_cascades();
+        // Handlers add feeling freely (+25 fear for a warrant); the day ends
+        // with everyone back inside the 0..100 every reader assumes.
+        for n in &mut self.npcs {
+            n.emotions.clamp();
+        }
         let row = super::debug::snapshot(self);
         self.metrics.push(row);
     }
@@ -1014,6 +1133,7 @@ impl World {
         super::land::monthly(self);
         super::homestead::monthly(self);
         super::arms::monthly(self);
+        super::hands::monthly(self);
         super::civic::monthly(self);
         if self.day.month() == 11 {
             super::ghosts::yearly(self);

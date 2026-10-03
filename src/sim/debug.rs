@@ -157,6 +157,66 @@ pub fn explain_npc(world: &World, id: NpcId) -> String {
     );
     let _ = writeln!(
         s,
+        "DRESS     {} (warmth {:.2}, colors {:?}){}",
+        super::wardrobe::describe(world, id),
+        n.outfit.warmth(),
+        n.outfit.colors(),
+        n.outfit
+            .looks()
+            .iter()
+            .map(|l| format!("  [{}]", l.name))
+            .collect::<String>()
+    );
+    let chronic: Vec<&str> = world
+        .sickness
+        .chronic
+        .iter()
+        .filter(|c| c.0 == id)
+        .map(|c| c.1.label())
+        .collect();
+    let scars: Vec<&str> = super::psyche::Limb::ALL
+        .iter()
+        .filter(|l| n.scars & l.bit() != 0)
+        .map(|l| l.label())
+        .collect();
+    let _ = writeln!(
+        s,
+        "BODY      sick {:?}  chronic {:?}  wound {:?}  old wounds {:?}",
+        world.sickness.sick(id).map(|c| (c.disease.label(), c.left)),
+        chronic,
+        n.hurt.map(|l| l.label()),
+        scars
+    );
+    let _ = writeln!(s, "STANDING  {}", super::standing::describe(world, id));
+    let marks = super::marks::describe(world, id, true);
+    if !marks.is_empty() {
+        let _ = writeln!(s, "MARKS     {}", marks.join("; "));
+    }
+    let _ = writeln!(
+        s,
+        "TABLE     {}{}",
+        super::larder::describe(world, n.family),
+        if super::freight::away(world, id) {
+            "  (on the road to the river)"
+        } else {
+            ""
+        }
+    );
+    let papers = super::warrant::wanted(world, id);
+    let hand = world.hands.hired.iter().find(|h| h.npc == id);
+    if !papers.is_empty() || super::warrant::held(world, id) || hand.is_some() {
+        let _ = writeln!(
+            s,
+            "LAW       papers {} (${} on the head)  held {}  {}",
+            papers.len(),
+            super::warrant::price_on(world, id),
+            super::warrant::held(world, id),
+            hand.map(|h| format!("your hand (${}/mo, loyalty {:.2})", h.wage, h.loyalty))
+                .unwrap_or_default()
+        );
+    }
+    let _ = writeln!(
+        s,
         "BODY      str {} hardy {} aim {} stealth {} alert {} recall {}  (frailty {:.2})",
         pct(b.strength),
         pct(b.hardiness),
@@ -355,6 +415,137 @@ pub fn explain_price(world: &World, g: Good) -> String {
         },
         hist.join(" ")
     )
+}
+
+/// Which system owns each kind of event, for `lab matrix`: the county's
+/// systems as a graph, every one against every other.
+const OWNERS: &[(&str, &str)] = &[
+    ("Fire", "violence"),
+    ("Death", "violence"),
+    ("Wounded", "violence"),
+    ("ShotAt", "violence"),
+    ("Retaliation", "violence"),
+    ("Theft", "violence"),
+    ("Cruelty", "violence"),
+    ("Prowler", "violence"),
+    ("Belief", "blame"),
+    ("Gossip", "blame"),
+    ("OpinionChange", "blame"),
+    ("Grief", "blame"),
+    ("FactionGrievance", "faction"),
+    ("FeudDeclared", "faction"),
+    ("Perished", "economy"),
+    ("Desperation", "economy"),
+    ("Harvest", "economy"),
+    ("Favor", "economy"),
+    ("Gift", "economy"),
+    ("StockStarved", "economy"),
+    ("History", "history"),
+    ("Headline", "history"),
+    ("Trespass", "nations"),
+    ("Annuity", "nations"),
+    ("Complaint", "nations"),
+    ("Plundered", "nations"),
+    ("Visit", "nations"),
+    ("Adopted", "nations"),
+    ("KawHunt", "nations"),
+    ("BuffaloHunt", "bison"),
+    ("Brawl", "institutions"),
+    ("Blackmail", "intrigue"),
+    ("OathSworn", "ghosts"),
+    ("OathInherited", "ghosts"),
+    ("OathWakes", "ghosts"),
+    ("ShameCarried", "ghosts"),
+    ("ShameWakes", "ghosts"),
+    ("SpiritSeen", "ghosts"),
+    ("SpiritRests", "ghosts"),
+    ("Spared", "reconcile"),
+    ("BarnRaising", "reconcile"),
+    ("Apology", "reconcile"),
+    ("Condolence", "reconcile"),
+    ("FeudEnded", "reconcile"),
+    ("WhereWereYou", "family"),
+    ("Pastime", "life"),
+    ("Sermon", "life"),
+    ("Baptism", "life"),
+    ("Speech", "life"),
+    ("Affair", "romance"),
+    ("Scandal", "romance"),
+    ("Marriage", "romance"),
+    ("Born", "romance"),
+    ("Bigamy", "romance"),
+    ("Built", "homestead"),
+    ("Improved", "homestead"),
+    ("StandCut", "homestead"),
+    ("ClaimFiled", "civic"),
+    ("ClaimJumped", "civic"),
+    ("Festival", "civic"),
+    ("Strayed", "farmwork"),
+    ("Letter", "mail"),
+    ("KinArrived", "mail"),
+    ("Lawsuit", "law"),
+    ("Election", "law"),
+    ("VoteSold", "law"),
+    ("Muster", "law"),
+    ("RollPadded", "law"),
+    ("WagonOut", "freight"),
+    ("WagonBack", "freight"),
+    ("WagonStopped", "freight"),
+    ("ShortWeight", "freight"),
+    ("Wake", "sickness"),
+    ("FellSick", "sickness"),
+    ("Recovered", "sickness"),
+    ("Epidemic", "sickness"),
+    ("DoctorCalled", "sickness"),
+    ("Notice", "legacy"),
+    ("Legacy", "legacy"),
+    ("BeeHeld", "bees"),
+    ("ChurchSplit", "bees"),
+    ("ClaimBought", "land"),
+    ("SeekerAtDoor", "railroad"),
+    ("Sheltered", "railroad"),
+    ("TurnedAway", "railroad"),
+    ("Pursuers", "railroad"),
+    ("Captured", "railroad"),
+    ("Freedom", "railroad"),
+    ("Charged", "railroad"),
+    ("Cornered", "market"),
+    ("PriceMove", "market"),
+    ("RidersAtGate", "action"),
+    ("Standoff", "action"),
+    ("ArmsArrived", "arms"),
+    ("Intercepted", "arms"),
+    ("Searched", "arms"),
+    ("TurnedBack", "hands"),
+    ("HandHired", "hands"),
+    ("HandQuit", "hands"),
+    ("HandTalked", "hands"),
+    ("Hirelings", "hands"),
+    ("Warrant", "warrant"),
+    ("PosseOut", "warrant"),
+    ("Arrested", "warrant"),
+    ("Tried", "warrant"),
+    ("Fled", "warrant"),
+    ("BountyPaid", "warrant"),
+    ("Looted", "wardrobe"),
+    ("MarkEarned", "marks"),
+    ("Remembered", "marks"),
+];
+
+/// The variant name of an event kind.
+pub fn kind_name(k: &EventKind) -> String {
+    let s = format!("{k:?}");
+    s.split([' ', '{', '(']).next().unwrap_or("").to_string()
+}
+
+/// The system that owns this kind of event ("?" for one nobody claimed:
+/// add it to `OWNERS`).
+pub fn system_of(k: &EventKind) -> &'static str {
+    let name = kind_name(k);
+    OWNERS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map_or("?", |(_, s)| *s)
 }
 
 #[cfg(test)]

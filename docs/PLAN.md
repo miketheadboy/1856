@@ -5,14 +5,16 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 
 ## Where it stands
 
-- 30+ sim modules, 137 sim tests + 5 view tests, clippy/fmt clean, two simulated years in ~25 ms.
+- 38 sim modules, 162 sim tests + 5 view tests, clippy/fmt clean, two simulated years in ~25 ms.
 - Balance (50 seeds, two years): a war nobody started in ~18/50, ~1 violent
   death per seed-year, harsh winters measurably worse (Phase 2 gate).
 - The Bevy view: three scales (county map, your claim on foot, town
   streets), command windows on things, letterboxed scenes, a status screen
   and the paper. Phase B's action games: standoffs at the gate, raids at
   night, ambush on the road. Phase C's armories, the bench, crates of
-  "books" and posse searches. Next: Phase D, hands and hired guns.
+  "books" and posse searches. Phase D's doombringers: hands and the night
+  watch, companies for hire, the justice's papers, posses and bounty
+  hunters. Next: Phase E, voice.
 
 ## Everything asked for, and where it went
 
@@ -40,8 +42,8 @@ Section refs (§) point at the master plan and `PART_I_EXTENSIONS.md`.
 | clean UI; closer and wider views; situational styles like FF7; kill the button wall | done (Phase A) | `county.rs`, `claim.rs`, `town.rs`, `walk.rs`, `scene.rs`, `ui.rs` |
 | action and violence, and how to avoid it; shows of force; stealth; assassinations; minigames (fun, skill based, a little twitchy) | done (Phase B) | `action`, `duel.rs`, `raid.rs` |
 | stockpiles, weapons, ammo, materials, crafting | done (Phase C) | `arms`, the bench in `duel.rs` |
-| assign tasks to family/faction/hired hands; mercenaries; bounty hunters (be one or run from one) | **next** | **Phase D** |
-| voice: 1850s humor, self-aware, Deadwood-ornate, ~75% Milch / 25% Heidecker–Turkington | planned | **Phase E** |
+| assign tasks to family/faction/hired hands; mercenaries; bounty hunters (be one or run from one) | done (Phase D) | `hands`, `warrant` |
+| voice: 1850s humor, self-aware, Deadwood-ornate, ~75% Milch / 25% Heidecker–Turkington | **next** | **Phase E** |
 | language quirks that spread through families and friends and evolve with the world | planned | **Phase E** |
 | a portion of Crusader Kings 3: schemes, dynasty, traits and stress, emergent narrative | planned | **Phase F** |
 | folklore: omens, will-o'-wisps, spiritualism, wakes | planned | **Phase G** |
@@ -148,7 +150,43 @@ separate kind, caps, harness.
   (after a raid, a muster, a warrant) can find them → a charge.
 - Shows of force, standoffs and musters scale with arms on hand.
 
-## Phase D — hands, hired guns, warrants and bounties
+## Phase D — the doombringers: hands, hired guns, warrants and bounties — DONE
+
+Shipped:
+- `hands`: kin and hired hands take one job each (fields, stock, timber,
+  the night watch). A watch turns riders back at the fence before they reach
+  the gate, and cows them for a season; neighbors in a feud post one too,
+  which brought fires down from ~34 to ~30 per two years. Hands come by the
+  month ($12) from hungry households, wages to their people; an unpaid hand
+  walks and talks, and a sour one of the other side tells where the guns are
+  (a search finds them as if over the door until you move them). Companies:
+  the Kickapoo Rangers, Buford's Southerners, the Stubbs, Lane's Army of the
+  North, each in the county when it was, and only for its own side. Rent one
+  to sit on your place three nights, or to ride on a neighbor's tonight
+  (barn, else stock); nobody sees your face, and the other side's paper may
+  print who paid.
+- `warrant`: complaints from beliefs (an eyewitness is an oath, a loss most
+  of one, a neighbor's word a little; the paper nothing; one household one
+  voice), weighted by the justice's side. Enough and he writes a paper, with
+  a bounty. Riders go out: the sheriff's posse, or a greedy man with a steady
+  hand if the price is worth it. The accused comes in, runs to the States, or
+  fights (shoot the law and the price doubles, and the shooting is its own
+  crime). Trials at Lecompton; convicted, jail and costs. Held men don't
+  plot, muster, vote or work. Blood spilled serving a paper writes no paper.
+- You: a scene when word comes; give yourself up (tried that day), lie low a
+  week in the timber, light out for the States six weeks, or meet them at the
+  gate (the same standoff game; stand aside and it's Lecompton). Or take a
+  paper at the justice's and ride after the man (paid on delivery, half for a
+  body), or ride with the sheriff's men for a share.
+- Lenses: `lab law` (every paper, and the truth beside it), `lab hands`
+  (a watch and a hand against nobody), the survey's law line, `explain_npc`.
+- Survey (30 seeds, two years): 24/30 wars from nothing, 4.3 violent deaths,
+  30 fires, 5.6 papers per seed, ~80% on the wrong man, ~1 shot serving them.
+
+Left for later: neighbors hiring companies, a hand's own grudges, the
+federal marshal's papers after Geary, and the view's walk to the man's door.
+
+The plan, as written:
 
 - **Assign** kin to tasks (fields, stock, woods, watch the road at night:
   a sentry lowers raid success against you).

@@ -46,13 +46,20 @@ pub fn victim_of(world: &World, event: EventId) -> Option<NpcId> {
         EventKind::Death { victim, .. } => Some(victim),
         EventKind::Theft { victim, .. } => Some(victim),
         EventKind::Strayed { owner } => Some(owner),
+        EventKind::WagonStopped { teamster, .. } => Some(teamster),
+        EventKind::FellSick { who, disease } if super::sickness::suspected(disease) => Some(who),
         EventKind::Captured { at: Some(f), .. } => world.head_of(f),
         EventKind::Wounded { victim, .. } => Some(victim),
         EventKind::ShotAt { target, .. } => Some(target),
         EventKind::Prowler { victim, .. } => Some(victim),
         EventKind::Cruelty {
             victim,
-            act: Cruelty::KillStock | Cruelty::FoulWell | Cruelty::CutFence | Cruelty::SpoilHay,
+            act:
+                Cruelty::KillStock
+                | Cruelty::FoulWell
+                | Cruelty::CutFence
+                | Cruelty::SpoilHay
+                | Cruelty::FouledBlanket,
             ..
         } => Some(victim),
         _ => None,
@@ -108,6 +115,16 @@ pub fn candidates(
         });
     }
 
+    // A late death from an old wound: some say the fever took him.
+    if super::systems::fatal_wound(world, ev).is_some() {
+        out.push(Candidate {
+            suspect: Suspect::Nature,
+            score: 5.0 + rumor_for(Suspect::Nature),
+            reason: "a fever took him, not the ball",
+            parts: vec![("fever", 5.0)],
+        });
+    }
+
     match ev.kind {
         // A good fence makes the owner more suspicious, not less.
         EventKind::Strayed { .. } => {
@@ -137,6 +154,21 @@ pub fn candidates(
             reason: "bad water in a wet spring",
             parts: Vec::new(),
         }),
+        // The water, the heat, the season: what the doctor would say.
+        EventKind::FellSick { .. } => {
+            let well =
+                super::homestead::has(world, victim_family, super::homestead::Improvement::Well);
+            out.push(Candidate {
+                suspect: Suspect::Nature,
+                score: if well { 30.0 } else { 45.0 } + rumor_for(Suspect::Nature),
+                reason: if (6..=9).contains(&ev.day.month()) {
+                    "bad water in the heat"
+                } else {
+                    "bad water"
+                },
+                parts: vec![("the water", if well { 30.0 } else { 45.0 })],
+            });
+        }
         EventKind::Cruelty {
             act: Cruelty::CutFence,
             ..
@@ -198,6 +230,13 @@ pub fn candidates(
         });
     }
 
+    // Fifty dollars for a fugitive: whoever came into money lately did it.
+    let flush = if matches!(ev.kind, EventKind::Captured { .. }) {
+        came_into_money(world, ev.day)
+    } else {
+        Vec::new()
+    };
+
     for person in world.living() {
         let p = person.id;
         if p == observer
@@ -213,7 +252,13 @@ pub fn candidates(
         let mut motive = 0.0;
         // "Their side does this": judged by what people say out loud.
         let gap = (person.ideology.public - world.npc(victim).ideology.public).abs();
-        motive += 10.0 * gap;
+        // Married across the line: whose side is he on, then? (`marks`)
+        let across = if super::marks::has(world, p, super::marks::Mark::MarriedAcross) {
+            0.5
+        } else {
+            1.0
+        };
+        motive += 10.0 * gap * across;
         if world.feud_between(person.family, victim_family) {
             motive += 20.0;
         }
@@ -227,7 +272,21 @@ pub fn candidates(
         } else {
             0.0
         };
-        let capability = 5.0;
+        // Who "could have": a woman is seldom thought to fire a barn or lie
+        // in wait, the same prejudice that discounts her word.
+        let violent = is_fire
+            || matches!(
+                ev.kind,
+                EventKind::Death { .. } | EventKind::Wounded { .. } | EventKind::ShotAt { .. }
+            );
+        let capability = if violent && super::world::is_woman(&person.name) {
+            -15.0
+        } else {
+            5.0
+        };
+        // The usual suspects: the poor, the new, the jailbird, the man with
+        // the other side all round him. Nobody vouches for them (`standing`).
+        let no_account = 30.0 * (1.0 - super::standing::repute(world, p)).max(0.0);
         let priors = world
             .npc(observer)
             .memories
@@ -242,10 +301,23 @@ pub fn candidates(
             0.0
         };
         let rumor_boost = rumor_for(Suspect::Person(p));
+        let money = if flush.contains(&person.family) {
+            FLUSH
+        } else {
+            0.0
+        };
 
-        let score =
-            -25.0 + hostility + proximity + motive + hunger + capability + pattern + rumor_boost
-                - alibi;
+        let score = -25.0
+            + hostility
+            + proximity
+            + motive
+            + hunger
+            + capability
+            + no_account
+            + pattern
+            + rumor_boost
+            + money
+            - alibi;
 
         let reasons = [
             (hostility, "bad blood between them"),
@@ -254,6 +326,8 @@ pub fn candidates(
             (pattern, "has done it before"),
             (rumor_boost, "everybody says so"),
             (hunger, "their family is starving"),
+            (no_account, "no account, and nobody to vouch for them"),
+            (money, "came into money all of a sudden"),
         ];
         let reason = reasons
             .iter()
@@ -272,13 +346,51 @@ pub fn candidates(
                 ("motive", motive),
                 ("hunger", hunger),
                 ("capability", capability),
+                ("no account", no_account),
                 ("pattern", pattern),
                 ("rumor", rumor_boost),
+                ("money", money),
                 ("alibi", -alibi),
             ],
         });
     }
 
+    out
+}
+
+/// What sudden money weighs against a man when a fugitive is taken.
+pub const FLUSH: f32 = 30.0;
+
+/// Households that came into money in the fortnight before `day`: a letter
+/// with a bank note in it, or the reward itself. The county can't tell them
+/// apart, and doesn't try.
+pub fn came_into_money(world: &World, day: super::calendar::Day) -> Vec<super::world::FamilyId> {
+    let since = day.0.saturating_sub(14);
+    let mut out = Vec::new();
+    for e in world
+        .events
+        .iter()
+        .rev()
+        .skip_while(|e| e.day > day)
+        .take_while(|e| e.day.0 >= since)
+    {
+        let f = match e.kind {
+            EventKind::Letter {
+                family,
+                letter: super::mail::Letter::Money(d),
+                ..
+            } if d >= 5 => Some(family),
+            EventKind::Captured {
+                informer: Some(i), ..
+            } => Some(world.npc(i).family),
+            _ => None,
+        };
+        if let Some(f) = f
+            && !out.contains(&f)
+        {
+            out.push(f);
+        }
+    }
     out
 }
 

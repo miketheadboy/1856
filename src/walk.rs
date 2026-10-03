@@ -290,6 +290,10 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
                 when("Write home", Cmd::Do(Activity::WriteHome), f),
             ];
             items.extend(cmds::door_choices(world));
+            items.extend(cmds::wanted_choices(world));
+            items.push(item("Hands...", Cmd::Open(Sub::Hands)));
+            items.push(item("Dress...", Cmd::Open(Sub::Dress)));
+            items.push(item("The sick...", Cmd::Open(Sub::Sick)));
             items.push(item("The workbench...", Cmd::Open(Sub::Bench)));
             items.push(item("Hard times...", Cmd::Open(Sub::HardTimes)));
             items.push(item("Take stock", Cmd::Status));
@@ -366,6 +370,7 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
                 when("Cut a load of timber", Cmd::Do(Activity::CutTimber), f),
                 when("Hunt", Cmd::Choose(Choice::Hunt), f),
                 when("Walk the timber", Cmd::Do(Activity::Roam), f),
+                when("Gather bark and herbs", Cmd::GatherHerbs, f),
                 when("Camp out tonight", Cmd::Do(Activity::Camp), f),
                 back,
             ],
@@ -433,8 +438,8 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
             if !world.institutions.open[Venue::FreeStateHotel.index()] {
                 return MenuSpec::new(
                     "The Free State Hotel",
-                    "A shell since May. Cannon, then kerosene. Men still stop and look at it.",
-                    vec![back],
+                    "A shell since May. Cannon, then kerosene. Men still stop and look at it, and some of them loaf in it with rifles, waiting on someone to pay them.",
+                    vec![item("Men for hire...", Cmd::Open(Sub::Guns(true))), back],
                 );
             }
             MenuSpec::new(
@@ -452,6 +457,7 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
                         f,
                     ),
                     item("Be seen in the lobby", Cmd::BeSeen),
+                    item("Men for hire...", Cmd::Open(Sub::Guns(true))),
                     back,
                 ],
             )
@@ -513,6 +519,7 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
             vec![
                 when("Drink", Cmd::Do(Activity::Drink), f),
                 item("What you know...", Cmd::Open(Sub::Leverage)),
+                item("Men for hire...", Cmd::Open(Sub::Guns(false))),
                 item("Be seen at the bar", Cmd::BeSeen),
                 back,
             ],
@@ -533,7 +540,7 @@ pub fn spot_menu(world: &World, k: SpotKind) -> MenuSpec {
                 back,
             ],
         ),
-        SpotKind::Justice => cmds::menu(world, Sub::Sue),
+        SpotKind::Justice => cmds::menu(world, Sub::Justice),
         SpotKind::Polls => match cmds::election(world) {
             Some(e) => MenuSpec::new(
                 "The polls",

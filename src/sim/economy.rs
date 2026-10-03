@@ -16,7 +16,7 @@ pub const SEED_FOOD: f32 = 12.0;
 const COW_FOOD: f32 = 90.0;
 const OX_FOOD: f32 = 160.0;
 /// Most the store will lend before it stops extending credit.
-const CREDIT_LIMIT: i32 = 60;
+pub const CREDIT_LIMIT: i32 = 60;
 /// Days a family waits between desperate choices.
 const DECISION_COOLDOWN: u32 = 5;
 /// Start deciding when stores fall below this many days of eating.
@@ -64,6 +64,10 @@ pub struct Household {
     pub improvements: super::homestead::Improvements,
     /// Guns, lead, balls, cartridges, rails, and where the guns are hid (`arms`).
     pub arms: super::arms::Armory,
+    /// Doses in the medicine chest, by `sickness::Remedy`.
+    pub medicine: [u8; super::sickness::MEDS],
+    /// What the food is made of, and the coffee (`larder`).
+    pub larder: super::larder::Larder,
 }
 
 impl Household {
@@ -122,18 +126,13 @@ pub fn daily(world: &mut World) {
         if winter {
             // Quilts from a winter's bees keep a house warmer.
             let quilts = world.gatherings.quilts(family).min(3) as f32;
-            let cellar =
-                if super::homestead::has(world, family, super::homestead::Improvement::Cellar) {
-                    0.1
-                } else {
-                    0.0
-                };
             need += 0.3 * m * world.winter_severity * (1.0 - 0.1 * quilts);
-            need *= 1.0 - cellar;
         }
         if weather.blizzard {
             need += 0.4 * m;
         }
+        // Roots off the cellar shelf spare the corn (`larder`).
+        need = (need - super::larder::eat_garden(world, family, m)).max(0.0);
         let hh = &mut world.families[f].stores;
         hh.food -= need;
         let starving = hh.food <= 0.0;
@@ -175,7 +174,8 @@ pub fn daily(world: &mut World) {
                 } else {
                     Hardship::Fever
                 };
-                world.emit_root(EventKind::Perished { victim: p, cause }, None);
+                let (kind, why) = super::systems::perished(world, p, cause);
+                world.emit_root(kind, why);
             }
         }
     }
@@ -316,15 +316,15 @@ fn buy(world: &mut World, family: FamilyId) -> bool {
 fn butcher(world: &mut World, family: FamilyId, meat: f32) {
     let salted = market::consume(world, family, Good::Salt);
     let smoked = super::homestead::has(world, family, super::homestead::Improvement::Smokehouse);
-    let hh = &mut world.families[family as usize].stores;
-    hh.food += if salted {
+    let kept = if salted {
         meat
     } else if smoked {
         meat * 0.8
     } else {
         meat * 0.5
     };
-    hh.goods[Good::Hides.index()] += 1.0;
+    super::larder::add_meat(world, family, kept);
+    world.families[family as usize].stores.goods[Good::Hides.index()] += 1.0;
 }
 
 /// Try one way out. Returns whether it produced food (or was at least tried
@@ -376,6 +376,12 @@ pub fn act(world: &mut World, family: FamilyId, choice: Choice) -> bool {
             if super::legacy::credit_cut(world, family) {
                 return false;
             }
+            // The store lends on a name: a widow's, a newcomer's, a
+            // jailbird's is good for less.
+            let name = world
+                .head_of(family)
+                .map_or(1.0, |h| super::standing::word(world, h));
+            let limit = (limit as f32 * (0.4 + 0.6 * name.min(1.0))) as i32;
             let hh = &mut world.families[f].stores;
             if hh.debt >= limit {
                 return false;
@@ -544,6 +550,7 @@ pub fn steal_from(world: &mut World, thief: NpcId, victim_family: FamilyId, vict
     world.families[thief_family].stores.food += match loot {
         Loot::Cow => COW_FOOD,
         Loot::Grain => sack * (0.5 + world.npc(thief).body.strength),
+        Loot::Goods => 0.0,
     };
     world.npc_mut(thief).alibi = None;
     world.emit_root(

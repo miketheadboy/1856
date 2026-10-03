@@ -1,0 +1,23 @@
+# The look: printed matter over the whole frame (src/look.rs, docs/ART.md).
+# Edit while the game runs; it re-reads within a second.
+
+# Paper
+grain = 0.14          # 0.10 a clean sheet .. 0.30 cheap newsprint
+grain_size = 1.6      # px per grain cell; 1 is fine, 3 is coarse
+boil_fps = 8          # grain changes this many times a second (printed frames)
+fiber = 0.07          # long paper fibers; 0.15 starts to look like cloth
+
+# Ink and plates
+bleed = 0.15          # dark ink creeping into the paper, 0 .. 1
+misreg = 1.5          # px the oxblood/brass plate is off register
+halftone = 0.0        # screen dots in the shadows; try 0.4 for a Harper's cut
+
+# Age
+desat = 0.12          # saturation below "correct"
+sepia = 0.22          # brown in the whites and greys
+vignette = 0.35       # the edges of the sheet
+
+# The county moves these
+tension_misreg = 1.5  # extra px off register at full tension (the press running ragged)
+tension_grain = 0.08  # extra grain at full tension
+night_vignette = 0.3  # extra vignette on a moonless night

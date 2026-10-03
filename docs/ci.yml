@@ -4,6 +4,10 @@ on:
   push:
     branches: [main, "claude/**"]
   pull_request:
+  # Nightly: the systems' books against each other, across more seeds and
+  # days than the test suite runs (src/sim/audit.rs).
+  schedule:
+    - cron: "17 7 * * *"
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,6 +27,14 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --no-default-features -- -D warnings
       - run: cargo test --no-default-features
+      - name: cross-system audit (two years, 30 seeds, every day)
+        run: |
+          cargo run --release --bin lab --no-default-features -- audit --seeds 30 --days 730 | tee audit.txt
+          grep -q "^30/30 seeds clean" audit.txt
+      - name: cross-system webs (every watched cause -> effect link fires)
+        run: cargo run --release --bin lab --no-default-features -- webs --seeds 30 --days 730 | tail -3
+      - name: gates (a war nobody started; harsh winters are harsher)
+        run: cargo run --release --bin lab --no-default-features -- gate --seeds 30 | tail -12
       - name: seed survey (two years, 30 seeds)
         run: cargo run --release --bin headless --no-default-features -- --survey 30 --days 730 | tail -1
 

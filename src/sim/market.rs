@@ -10,7 +10,7 @@ use super::character::{self, Archetype};
 use super::events::EventKind;
 use super::world::{Faction, FamilyId, NpcId, PLAYER, World};
 
-pub const GOODS: usize = 8;
+pub const GOODS: usize = 13;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Good {
@@ -30,6 +30,21 @@ pub enum Good {
     Whiskey,
     /// Hides from hunting and butchering. Cash crop of the poor.
     Hides,
+    /// Pounds of Rio. A pound a week keeps a house civil; out of it, tempers
+    /// fray (`larder`). The blockade summer of 1856 was a coffee famine.
+    Coffee,
+    /// Pounds of brown sugar or molasses. Puts up the garden (preserves,
+    /// dried apples): stores keep through the winter (`larder`).
+    Sugar,
+    /// Pounds of Missouri side meat. Meat when there's nothing to butcher:
+    /// the family works on it (`larder`, `psyche::labor`).
+    Bacon,
+    /// Yards of calico and jeans cloth. Mends worn clothes before they're
+    /// rags (`larder` → `wardrobe` wear: warmth, lice).
+    Cloth,
+    /// Pounds of nails, bar iron, a plow share. Improvements go up nailed,
+    /// not pegged (`homestead::build`).
+    Iron,
 }
 
 impl Good {
@@ -42,6 +57,11 @@ impl Good {
         Good::Timber,
         Good::Whiskey,
         Good::Hides,
+        Good::Coffee,
+        Good::Sugar,
+        Good::Bacon,
+        Good::Cloth,
+        Good::Iron,
     ];
 
     pub fn index(self) -> usize {
@@ -58,6 +78,11 @@ impl Good {
             Good::Timber => "timber",
             Good::Whiskey => "whiskey",
             Good::Hides => "hides",
+            Good::Coffee => "coffee",
+            Good::Sugar => "sugar",
+            Good::Bacon => "bacon",
+            Good::Cloth => "cloth",
+            Good::Iron => "nails & iron",
         }
     }
 
@@ -70,11 +95,13 @@ impl Good {
             Good::Timber => "load",
             Good::Whiskey => "gallon",
             Good::Hides => "hide",
+            Good::Coffee | Good::Sugar | Good::Bacon | Good::Iron => "lb",
+            Good::Cloth => "yard",
         }
     }
 
     /// 1855 dollars, roughly what things cost at a Kansas store.
-    fn base_price(self) -> f32 {
+    pub fn base_price(self) -> f32 {
         match self {
             Good::Corn => 0.60,
             Good::SeedCorn => 1.00,
@@ -84,6 +111,11 @@ impl Good {
             Good::Timber => 3.00,
             Good::Whiskey => 0.40,
             Good::Hides => 1.50,
+            Good::Coffee => 0.20,
+            Good::Sugar => 0.12,
+            Good::Bacon => 0.12,
+            Good::Cloth => 0.15,
+            Good::Iron => 0.08,
         }
     }
 
@@ -98,6 +130,11 @@ impl Good {
             Good::Timber => 20.0,
             Good::Whiskey => 40.0,
             Good::Hides => 40.0,
+            Good::Coffee => 120.0,
+            Good::Sugar => 150.0,
+            Good::Bacon => 300.0,
+            Good::Cloth => 150.0,
+            Good::Iron => 200.0,
         }
     }
 
@@ -113,6 +150,11 @@ impl Good {
             Good::Whiskey => 8.0,
             // The store ships hides east rather than receiving them.
             Good::Hides => -6.0,
+            Good::Coffee => 20.0,
+            Good::Sugar => 20.0,
+            Good::Bacon => 50.0,
+            Good::Cloth => 20.0,
+            Good::Iron => 25.0,
         }
     }
 }
@@ -202,6 +244,11 @@ pub fn ask_price(world: &World, buyer: NpcId, g: Good) -> f32 {
     }
 }
 
+/// 1855 dollars before scarcity and freight.
+pub fn base_price(g: Good) -> f32 {
+    g.base_price()
+}
+
 /// What the store pays you: a trader's spread.
 pub fn bid_price(world: &World, g: Good) -> f32 {
     world.market.price(g) * 0.7
@@ -274,7 +321,7 @@ pub fn holding(world: &World, family: FamilyId, g: Good) -> f32 {
     }
 }
 
-fn receive(world: &mut World, family: FamilyId, g: Good, units: f32) {
+pub(crate) fn receive(world: &mut World, family: FamilyId, g: Good, units: f32) {
     let hh = &mut world.families[family as usize].stores;
     match g {
         Good::Corn => hh.food += units * super::economy::SEED_FOOD,
@@ -395,6 +442,13 @@ fn weekly(world: &mut World) {
             Good::Whiskey => 7.0 + tension / 60.0,
             // Eastern buyers take hides off the store's hands.
             Good::Hides => 6.0,
+            // Lawrence, the emigrant trains, the freighters: coffee and
+            // sugar go wherever people are; bacon most in winter.
+            Good::Coffee => 10.0 * (1.0 + 0.5 * emigrants),
+            Good::Sugar => 8.0 * (1.0 + 0.5 * emigrants),
+            Good::Bacon => 20.0 + if season == Season::Winter { 15.0 } else { 0.0 },
+            Good::Cloth => 8.0 + 6.0 * emigrants,
+            Good::Iron => 8.0 + 12.0 * emigrants,
         };
         let supply_base = match g {
             Good::Corn => glut,
@@ -556,6 +610,38 @@ pub fn resent_hoarders(world: &mut World, hungry_family: FamilyId) {
 /// Word of who bought the store out. The hungry and the hard-up resent it
 /// most; the pious call it sin in a lean winter.
 pub fn on_event(world: &mut World, ev: &super::events::WorldEvent) {
+    // A dear price for something a house can't do without is Dunmore's
+    // gouging, to a house that owes him (`economy`). Nobody blames the river.
+    if let EventKind::PriceMove {
+        good: good @ (Good::Corn | Good::Coffee | Good::Salt | Good::SeedCorn),
+        rising: true,
+        ..
+    } = ev.kind
+        && world.market.goods[good.index()].band >= 1
+        && let Some(keeper) = world
+            .families
+            .iter()
+            .find(|f| f.store)
+            .and_then(|f| world.head_of(f.id))
+    {
+        let owing: Vec<NpcId> = world
+            .families
+            .iter()
+            .filter(|f| !f.store && (f.stores.debt >= 20 || f.stores.hungry_days > 0))
+            .filter_map(|f| world.head_of(f.id))
+            .collect();
+        for h in owing {
+            world.emit_child(
+                ev,
+                EventKind::OpinionChange {
+                    holder: h,
+                    target: keeper,
+                    delta: -4,
+                    after: 0,
+                },
+            );
+        }
+    }
     if let EventKind::Cornered { buyer, .. } = ev.kind {
         let lean = world.day.season() == Season::Winter
             || world.families.iter().any(|f| f.stores.hungry_days > 0);

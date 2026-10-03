@@ -23,6 +23,26 @@
 //!                            seizures and searches over --days
 //!   standoff                 the men who'd come to your gate: their draw, what drives
 //!                            them, and how often each way of meeting them works
+//!   law                      every paper the justice wrote, who it named, who really
+//!                            did it, and how it was served
+//!   sick                     who fell sick with what, who died of it, and what
+//!                            the doctor and the chest did, over --seeds
+//!   dress                    what the county wears, the looks, and whose colors
+//!   hands                    a watch at night and a hired hand, against nobody, over
+//!                            --seeds: riders turned back, fires, strays, timber
+//!   larder                   every table in the county: meat, garden, milk, coffee,
+//!                            cloth, water; and across --seeds, the wagons to the river
+//!   standing                 disparity: per 100 person-years, how often each band of
+//!                            standing is wrongly blamed, papered, convicted, jumped
+//!   audit                    every system's books against the others', every day,
+//!                            over --seeds: breaches by rule with a first example
+//!   matrix                   every system against every other over --seeds: cause ->
+//!                            effect between systems, same-day and delayed, the
+//!                            three-system chains, and systems nothing reaches
+//!   marks                    what lives leave on people over --seeds: how many, who
+//!                            holds them, and how often they come back
+//!   webs                     which events cause which, over --seeds: every cause ->
+//!                            effect pair the bus carried, and the links that never fired
 //!   metrics <file.csv>       daily metrics for charts
 //!   trace <file.tsv>         every event with its cascade links
 //!   time                     how long a simulated year takes
@@ -108,15 +128,536 @@ fn main() {
         "time" => time(&o),
         "standoff" => standoff(&o),
         "arms" => arms_lens(&o),
+        "law" => law_lens(&o),
+        "hands" => hands_lens(&o),
+        "sick" => sick_lens(&o),
+        "dress" => dress_lens(&o),
+        "audit" => audit_lens(&o),
+        "standing" => standing_lens(&o),
+        "larder" => larder_lens(&o),
+        "webs" => webs_lens(&o),
+        "matrix" => matrix_lens(&o),
+        "marks" => marks_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
                 .lines()
-                .take(28)
+                .take(35)
                 .map(|l| l.trim_start_matches("//!").trim_start_matches(' '))
                 .collect::<Vec<_>>()
                 .join("\n")
         ),
+    }
+}
+
+/// Phase D: the justice's papers, with the truth beside them.
+fn law_lens(o: &Opts) {
+    use bleeding_kansas::sim::warrant;
+    let w = world(o);
+    println!("seed {} after {} days ({})\n", o.seed, o.days, w.day);
+    for p in &w.warrants.list {
+        let truth = warrant::truth(&w, p.about)
+            .map(|t| w.name(t).to_string())
+            .unwrap_or_else(|| "nobody".into());
+        println!(
+            "{:<22} ${:<4} {:<8?} day {:>4}  [truth: {}{}]",
+            w.name(p.accused),
+            p.bounty,
+            p.state,
+            p.issued.0,
+            truth,
+            if warrant::truth(&w, p.about) == Some(p.accused) {
+                ""
+            } else {
+                " — the wrong man"
+            }
+        );
+    }
+    println!();
+    for e in &w.events {
+        if matches!(
+            e.kind,
+            EventKind::Warrant { .. }
+                | EventKind::PosseOut { .. }
+                | EventKind::Arrested { .. }
+                | EventKind::Tried { .. }
+                | EventKind::Fled { .. }
+                | EventKind::BountyPaid { .. }
+        ) {
+            println!("{}", chronicle::debug_line(&w, e, true));
+        }
+    }
+    let l = warrant::ledger(&w);
+    println!(
+        "\n{} papers ({} on the wrong man), {} arrested, {} convicted, {} fled, {} lapsed; {} shot by the law, {} lawmen shot; ${} in bounties",
+        l.papers,
+        l.wrong_man,
+        l.arrested,
+        l.convicted,
+        l.fled,
+        l.lapsed,
+        l.shot_by_law,
+        l.law_shot,
+        l.bounties_paid
+    );
+}
+
+/// The county's tables on one day, then the river trade across seeds.
+/// Every system against every other: for each event with a parent (same
+/// day) or a cause (a later day), the pair of owning systems; and for each
+/// grandchild, the three-system chain. Empty rows are islands.
+fn matrix_lens(o: &Opts) {
+    use bleeding_kansas::sim::debug::{kind_name, system_of};
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut same: BTreeMap<(&str, &str), u32> = BTreeMap::new();
+    let mut later: BTreeMap<(&str, &str), u32> = BTreeMap::new();
+    let mut chains: BTreeMap<(&str, &str, &str), u32> = BTreeMap::new();
+    let mut unowned: BTreeSet<String> = BTreeSet::new();
+    let mut systems: BTreeSet<&str> = BTreeSet::new();
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        let up = |e: &bleeding_kansas::sim::WorldEvent| e.parent.or(e.caused_by);
+        for e in &w.events {
+            let to = system_of(&e.kind);
+            if to == "?" {
+                unowned.insert(kind_name(&e.kind));
+            }
+            systems.insert(to);
+            let Some(c) = up(e) else { continue };
+            let ce = &w.events[c as usize];
+            let from = system_of(&ce.kind);
+            if from != to {
+                let book = if e.parent.is_some() {
+                    &mut same
+                } else {
+                    &mut later
+                };
+                *book.entry((from, to)).or_default() += 1;
+            }
+            if let Some(g) = up(ce) {
+                let first = system_of(&w.events[g as usize].kind);
+                if first != from && from != to && first != to {
+                    *chains.entry((first, from, to)).or_default() += 1;
+                }
+            }
+        }
+    }
+    let n = o.seeds as f32;
+    let mut out_deg: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut in_deg: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for &(a, b) in same.keys().chain(later.keys()) {
+        out_deg.entry(a).or_default().insert(b);
+        in_deg.entry(b).or_default().insert(a);
+    }
+    println!(
+        "{} systems; {} same-day links and {} delayed links between them ({} seeds x {} days)\n",
+        systems.len(),
+        same.len(),
+        later.len(),
+        o.seeds,
+        o.days
+    );
+    println!("{:<13} {:>4} {:>4}  reaches", "system", "out", "in");
+    for s in &systems {
+        let outs = out_deg.get(s).map_or(0, |x| x.len());
+        let ins = in_deg.get(s).map_or(0, |x| x.len());
+        let reach: Vec<&str> = out_deg
+            .get(s)
+            .map_or(Vec::new(), |x| x.iter().copied().collect());
+        println!("{s:<13} {outs:>4} {ins:>4}  {}", reach.join(" "));
+    }
+    let mut d: Vec<_> = later.iter().collect();
+    d.sort_by(|a, b| b.1.cmp(a.1));
+    println!("\ndelayed (a later day), per seed:");
+    for ((a, b), c) in d.iter().take(25) {
+        println!("  {:>8.2}  {a} -> {b}", **c as f32 / n);
+    }
+    let mut t: Vec<_> = chains.iter().collect();
+    t.sort_by(|a, b| b.1.cmp(a.1));
+    println!(
+        "\n{} three-system chains; the commonest, per seed:",
+        t.len()
+    );
+    for ((a, b, c), k) in t.iter().take(30) {
+        println!("  {:>8.2}  {a} -> {b} -> {c}", **k as f32 / n);
+    }
+    let islands: Vec<&&str> = systems
+        .iter()
+        .filter(|s| !out_deg.contains_key(*s) && !in_deg.contains_key(*s))
+        .collect();
+    if !islands.is_empty() {
+        println!("\nislands (nothing in, nothing out): {islands:?}");
+    }
+    if !unowned.is_empty() {
+        println!("\nevents no system claims (add to debug::OWNERS): {unowned:?}");
+        std::process::exit(1);
+    }
+}
+
+/// What lives leave on people.
+fn marks_lens(o: &Opts) {
+    use bleeding_kansas::sim::marks::Mark;
+    let mut count = [0u32; 11];
+    let mut back = 0u32;
+    let mut example: [Option<String>; 11] = Default::default();
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        for h in &w.marks.held {
+            let i = Mark::ALL.iter().position(|m| *m == h.mark).unwrap();
+            count[i] += 1;
+            if example[i].is_none() {
+                example[i] = Some(format!("{} (seed {seed}, {})", w.name(h.who), h.day));
+            }
+        }
+        back += w
+            .events
+            .iter()
+            .filter(|e| matches!(e.kind, EventKind::Remembered { .. }))
+            .count() as u32;
+    }
+    let n = o.seeds as f32;
+    println!("marks per seed over {} days ({} seeds):", o.days, o.seeds);
+    for (i, m) in Mark::ALL.iter().enumerate() {
+        println!(
+            "  {:>6.2}  {:<34} {:<8} {}",
+            count[i] as f32 / n,
+            m.label(),
+            if m.public() { "known" } else { "private" },
+            example[i].clone().unwrap_or_default()
+        );
+    }
+    println!(
+        "\n{:.2} marks came back on their holders per seed",
+        back as f32 / n
+    );
+}
+
+/// The bus as a graph: for every event with a parent or a cause, the pair
+/// (cause kind -> effect kind), tallied over seeds. A web that should hold
+/// and shows zero is a wire cut somewhere.
+fn webs_lens(o: &Opts) {
+    use std::collections::BTreeMap;
+    let name = |k: &EventKind| {
+        let s = format!("{k:?}");
+        s.split([' ', '{', '(']).next().unwrap_or("").to_string()
+    };
+    let mut pairs: BTreeMap<(String, String), u32> = BTreeMap::new();
+    // Links that are decisions, not events: tallied by their marks.
+    let (mut flush_blamed, mut flush_right, mut sold) = (0u32, 0u32, 0u32);
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        for e in &w.events {
+            if let EventKind::Belief {
+                about,
+                blamed: bleeding_kansas::sim::Suspect::Person(x),
+                reason: "came into money all of a sudden",
+                ..
+            } = e.kind
+            {
+                flush_blamed += 1;
+                if matches!(w.events[about as usize].kind, EventKind::Captured { informer: Some(i), .. } if i == x)
+                {
+                    flush_right += 1;
+                }
+            }
+            if let EventKind::Captured {
+                informer: Some(i), ..
+            } = e.kind
+                && w.npc(i).faction == bleeding_kansas::sim::Faction::FreeState
+            {
+                sold += 1;
+            }
+            if let Some(c) = e.parent.or(e.caused_by) {
+                let from = name(&w.events[c as usize].kind);
+                *pairs.entry((from, name(&e.kind))).or_default() += 1;
+            }
+        }
+    }
+    let n = o.seeds as f32;
+    let mut rows: Vec<_> = pairs.iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(a.1));
+    println!(
+        "{} cause -> effect pairs over {} seeds x {} days (per seed):",
+        rows.len(),
+        o.seeds,
+        o.days
+    );
+    for ((from, to), c) in &rows {
+        println!("  {:>9.2}  {from} -> {to}", **c as f32 / n);
+    }
+    println!(
+        "\ncaptures blamed on whoever came into money: {:.2}/seed ({} of {} on the real informer); free-state men who sold a fugitive: {:.2}/seed",
+        flush_blamed as f32 / n,
+        flush_right,
+        flush_blamed,
+        sold as f32 / n
+    );
+    // The webs this lens was built to watch. (WagonStopped -> Headline is
+    // rare by history: the blockade summer is the summer the Free-State
+    // presses were in the river. WagonBack -> FellSick, cholera off the
+    // levee, needs a cholera summer and a wagon in it: ~1 seed in 50; and
+    // Wake -> FellSick, a friend catching it at the burying, ~1 in 30.)
+    let expect = [
+        ("WagonOut", "Freedom"),
+        ("WagonBack", "ArmsArrived"),
+        ("WagonStopped", "Belief"),
+        ("Perished", "Wake"),
+        ("FellSick", "Belief"),
+        ("Death", "MarkEarned"),
+        ("Recovered", "MarkEarned"),
+        ("MarkEarned", "Remembered"),
+        ("Remembered", "SpiritSeen"),
+        ("Desperation", "MarkEarned"),
+        ("Brawl", "OpinionChange"),
+        ("Tried", "OpinionChange"),
+        ("PriceMove", "OpinionChange"),
+        ("Searched", "OpinionChange"),
+        ("StandCut", "Trespass"),
+        ("Trespass", "Complaint"),
+        ("Death", "RollPadded"),
+        ("BeeHeld", "FeudEnded"),
+        ("Muster", "Wounded"),
+        ("BuffaloHunt", "Complaint"),
+    ];
+    let cut: Vec<_> = expect
+        .iter()
+        .filter(|(a, b)| !pairs.contains_key(&(a.to_string(), b.to_string())))
+        .collect();
+    if cut.is_empty() {
+        println!("\nevery watched web fired");
+    } else {
+        println!("\nnever fired: {cut:?}");
+        std::process::exit(1);
+    }
+}
+
+fn larder_lens(o: &Opts) {
+    use bleeding_kansas::sim::{freight, larder};
+    let mut w = World::new(o.seed);
+    w.run_days(o.days);
+    println!("seed {} on {}:", o.seed, w.day);
+    for f in &w.families {
+        if f.store || w.head_of(f.id).is_none() {
+            continue;
+        }
+        println!("  {:<10} {}", f.surname, larder::describe(&w, f.id));
+    }
+    for line in freight::describe(&w) {
+        println!("  on the road: {line}");
+    }
+    let (mut out, mut back, mut stopped, mut short, mut lane, mut scurvy) = (0, 0, 0, 0, 0, 0);
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        for e in &w.events {
+            match e.kind {
+                EventKind::WagonOut { route_west, .. } => {
+                    out += 1;
+                    lane += (!route_west) as u32;
+                }
+                EventKind::WagonBack { .. } => back += 1,
+                EventKind::WagonStopped { .. } => stopped += 1,
+                EventKind::ShortWeight { .. } => short += 1,
+                EventKind::FellSick {
+                    disease: bleeding_kansas::sim::sickness::Disease::Scurvy,
+                    ..
+                } => scurvy += 1,
+                _ => {}
+            }
+        }
+    }
+    let n = o.seeds as f32;
+    println!(
+        "\nper seed over {} days: {:.1} wagons out ({:.1} by the Lane Trail), {:.1} home, {:.1} stopped by Missourians, {:.1} short weights; {:.1} down with scurvy",
+        o.days,
+        out as f32 / n,
+        lane as f32 / n,
+        back as f32 / n,
+        stopped as f32 / n,
+        short as f32 / n,
+        scurvy as f32 / n
+    );
+}
+
+/// Disparity across seeds: each day, for every grown person, note which
+/// positions they hold (a woman, seen begging, new, a jailbird...) and count
+/// what the county did to them that day. Rates are per 100 person-years;
+/// the ratio is against grown people holding none of them.
+fn standing_lens(o: &Opts) {
+    use bleeding_kansas::sim::standing::{self, rate};
+    const COLS: [&str; 4] = ["wrongly blamed", "papers", "convicted", "claims jumped"];
+    let rows = standing::disparity(o.seeds, o.days);
+    println!(
+        "{} seeds x {} days, grown people. per 100 person-years (x ratio to none of these)\n",
+        o.seeds, o.days
+    );
+    let mut head = format!("{:<26} {:>8}", "position", "people");
+    for c in COLS {
+        head += &format!(" {c:>17}");
+    }
+    println!("{head}");
+    let base = rows[0].1;
+    for (name, v) in &rows {
+        let mut line = format!(
+            "{name:<26} {:>8.1}",
+            v[0] / (o.seeds as f64 * o.days as f64)
+        );
+        for c in 1..5 {
+            let r = rate(v, c);
+            let b = rate(&base, c);
+            let ratio = if b > 0.0 {
+                format!("x{:.1}", r / b)
+            } else {
+                "-".into()
+            };
+            line += &format!(" {r:>10.1} {ratio:>6}");
+        }
+        println!("{line}");
+    }
+    let mut w = World::new(o.seed);
+    w.run_days(o.days.min(365));
+    println!(
+        "\nseed {} after {} days, who stands where:",
+        o.seed,
+        o.days.min(365)
+    );
+    for n in w.living().filter(|n| n.id != 0) {
+        println!("  {:<22} {}", n.name, standing::describe(&w, n.id));
+    }
+}
+
+/// The auditor across seeds: run each county day by day and lay the books
+/// side by side. Prints each broken rule once with the day it first broke.
+fn audit_lens(o: &Opts) {
+    use bleeding_kansas::sim::audit;
+    let mut rules: Vec<(&'static str, usize, String)> = Vec::new();
+    let mut clean = 0;
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        let mut broke = false;
+        for _ in 0..o.days {
+            w.advance_day();
+            for (rule, n, first) in audit::summary(&audit::check(&w)) {
+                broke = true;
+                match rules.iter_mut().find(|r| r.0 == rule) {
+                    Some(r) => r.1 += n,
+                    None => rules.push((rule, n, format!("seed {seed} day {}: {first}", w.day.0))),
+                }
+            }
+        }
+        if !broke {
+            clean += 1;
+        }
+    }
+    println!("{clean}/{} seeds clean over {} days", o.seeds, o.days);
+    for (rule, n, first) in rules {
+        println!("{rule:<18} {n:>7} breach-days   first: {first}");
+    }
+}
+
+/// The sick pass: incidence and deaths by disease across seeds.
+fn sick_lens(o: &Opts) {
+    use bleeding_kansas::sim::sickness;
+    let mut tot: Vec<(sickness::Disease, usize, usize)> = Vec::new();
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        for (d, s, k) in sickness::tally(&w) {
+            match tot.iter_mut().find(|t| t.0 == d) {
+                Some(t) => {
+                    t.1 += s;
+                    t.2 += k;
+                }
+                None => tot.push((d, s, k)),
+            }
+        }
+        if seed == 1 {
+            for e in &w.events {
+                if matches!(
+                    e.kind,
+                    EventKind::Epidemic { .. } | EventKind::DoctorCalled { .. }
+                ) {
+                    println!("{}", chronicle::debug_line(&w, e, true));
+                }
+            }
+            println!();
+        }
+    }
+    println!(
+        "{:<20} {:>8} {:>8}   per seed over {} days",
+        "", "sick", "dead", o.days
+    );
+    for (d, s, k) in tot {
+        println!(
+            "{:<20} {:>8.1} {:>8.2}",
+            d.label(),
+            s as f32 / o.seeds as f32,
+            k as f32 / o.seeds as f32
+        );
+    }
+}
+
+/// The outfit pass: who wears what, and whose colors they show.
+fn dress_lens(o: &Opts) {
+    use bleeding_kansas::sim::wardrobe;
+    let w = world(o);
+    for n in w.living() {
+        let looks: Vec<&str> = n.outfit.looks().iter().map(|l| l.name).collect();
+        println!(
+            "{:<22} {:<11} {:<60} {}{}",
+            n.name,
+            n.faction.label(),
+            wardrobe::describe(&w, n.id),
+            n.outfit
+                .colors()
+                .map(|c| format!("reads {} ", c.label()))
+                .unwrap_or_default(),
+            looks.join(", ")
+        );
+    }
+}
+
+/// Phase D: what a watch and a hired hand are worth, against nobody.
+fn hands_lens(o: &Opts) {
+    use bleeding_kansas::sim::hands::{self, Task};
+    let run = |seed: u64, staffed: bool| {
+        let mut w = World::new(seed);
+        w.autopilot_player = false;
+        w.families[0].stores.cash += 200;
+        if staffed {
+            if let Some(&k) = hands::workers(&w).first() {
+                hands::assign(&mut w, k, Task::Watch);
+            }
+            if let Some(&c) = hands::candidates(&w).first() {
+                hands::hire(&mut w, c);
+                hands::assign(&mut w, c, Task::Woods);
+            }
+        }
+        w.run_days(o.days);
+        let count = |f: &dyn Fn(&EventKind) -> bool| w.events.iter().filter(|e| f(&e.kind)).count();
+        (
+            count(&|k| matches!(k, EventKind::TurnedBack { target: 0, .. })),
+            count(&|k| matches!(k, EventKind::RidersAtGate { .. })),
+            count(&|k| matches!(k, EventKind::Fire { owner: 0, .. })),
+            count(&|k| matches!(k, EventKind::Strayed { owner: 0 })),
+            w.families[0].stores.goods[Good::Timber.index()],
+            w.hands.hired.len(),
+        )
+    };
+    println!(
+        "{:>5}  {:>22}  {:>22}",
+        "seed", "nobody: gate fire stray", "watch+hand: back gate fire timber kept"
+    );
+    for seed in 1..=o.seeds {
+        let a = run(seed, false);
+        let b = run(seed, true);
+        println!(
+            "{:>5}  {:>10} {:>5} {:>5}  {:>9} {:>5} {:>5} {:>6.0} {:>4}",
+            seed, a.1, a.2, a.3, b.0, b.1, b.2, b.4, b.5
+        );
     }
 }
 
@@ -177,6 +718,7 @@ fn standoff(o: &Opts) {
             day: w.day,
             yours: false,
             riders: Vec::new(),
+            serving: None,
         };
         println!(
             "{:<22} {:>5.2}s  {:<14} {:>8.2}",

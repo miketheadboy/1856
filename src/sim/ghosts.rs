@@ -117,7 +117,11 @@ fn swear(world: &mut World, ev: &WorldEvent, holder: NpcId, about: EventId, targ
         return;
     };
     let h = world.npc(holder);
-    if h.family != world.npc(victim).family
+    // What he saw was queued before the bullet that found him landed: a dead
+    // man's last belief stands in the log, but he swears nothing (the auditor
+    // caught Silas Ashby swearing on his wife's grave from his own).
+    if !h.alive
+        || h.family != world.npc(victim).family
         || holder == target
         || !world.npc(target).alive
         || world.ghosts.oath_against(holder, target)
@@ -204,6 +208,7 @@ fn settle(world: &mut World, ev: &WorldEvent, dead: NpcId, killer: Option<NpcId>
             .map(|n| (n.id, LifeStage::of(n.age) == LifeStage::Child));
         if let Some((heir, child)) = heir
             && world.npc(o.target).alive
+            && !world.ghosts.oath_against(heir, o.target)
         {
             world.ghosts.oaths.push(Oath {
                 holder: heir,

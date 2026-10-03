@@ -222,12 +222,11 @@ fn groggery(world: &mut World, present: &[NpcId]) {
         }
     }
     if let Some(&(a, b)) = world.rng.pick(&pairs) {
-        for (x, y) in [(a, b), (b, a)] {
+        for (x, _) in [(a, b), (b, a)] {
             let n = world.npc_mut(x);
             n.health = (n.health - 10).max(1);
-            world.adjust_opinion(x, y, -10);
         }
-        world.emit_root(
+        let id = world.emit_root(
             EventKind::Brawl {
                 venue: Venue::JackOfHearts,
                 a,
@@ -235,6 +234,28 @@ fn groggery(world: &mut World, present: &[NpcId]) {
             },
             None,
         );
+        // Each man's kin hear he was knocked down by the other, and take it
+        // personally. The bruise fades; the story doesn't.
+        let parent = world.events[id as usize].clone();
+        for (x, y) in [(a, b), (b, a)] {
+            let kin: Vec<NpcId> = world
+                .living()
+                .filter(|n| n.family == world.npc(x).family)
+                .map(|n| n.id)
+                .collect();
+            for k in kin {
+                let delta = if k == x { -10 } else { -3 };
+                world.emit_child(
+                    &parent,
+                    EventKind::OpinionChange {
+                        holder: k,
+                        target: y,
+                        delta,
+                        after: 0,
+                    },
+                );
+            }
+        }
     }
 }
 

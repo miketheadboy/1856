@@ -86,6 +86,9 @@ pub struct Armory {
     /// Split rails, for mending fence.
     pub rails: u16,
     pub hide: Hide,
+    /// A hand talked: the other side knows where the guns are until they're
+    /// moved. A search finds them as if they were in the open.
+    pub told: bool,
     /// Rifles ordered from the East, and the Wednesday they're due.
     pub on_order: Option<(Day, u8)>,
     /// One evening at the bench a day.
@@ -230,8 +233,14 @@ pub fn fire(world: &mut World, family: FamilyId) -> bool {
 
 /// Put the guns somewhere.
 pub fn hide(world: &mut World, family: FamilyId, place: Hide) {
-    world.families[family as usize].stores.arms.hide = place;
+    let a = &mut world.families[family as usize].stores.arms;
+    a.hide = place;
+    a.told = false;
 }
+
+/// Chance the Emigrant Aid men at Tabor send a rifle home in a Free-State
+/// wagon on the Lane Trail in 1856.
+pub const LANE_RIFLE: f32 = 0.4;
 
 /// Send east for rifles. They come in on a Wednesday two or three weeks on,
 /// if the river's open.
@@ -349,7 +358,12 @@ fn searches(world: &mut World) {
             continue;
         }
         let a = &fam.stores.arms;
-        let found = a.rifles > 0 && world.rng.chance(a.hide.found());
+        let odds = if a.told {
+            Hide::Open.found()
+        } else {
+            a.hide.found()
+        };
+        let found = a.rifles > 0 && world.rng.chance(odds);
         let seized = if found { a.rifles } else { 0 };
         if found {
             let a = &mut world.families[f].stores.arms;
@@ -417,9 +431,53 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
                 n.emotions.anger += 15.0;
             }
             world.add_grievance(Faction::FreeState, 2);
+            // The house blames the justice who sent the posse (`law`).
+            if let Some(j) = world.law.justice {
+                let house: Vec<super::world::NpcId> = world
+                    .living()
+                    .filter(|n| n.family == family && n.id != j)
+                    .map(|n| n.id)
+                    .collect();
+                for h in house {
+                    world.emit_child(
+                        ev,
+                        EventKind::OpinionChange {
+                            holder: h,
+                            target: j,
+                            delta: -15,
+                            after: 0,
+                        },
+                    );
+                }
+            }
         }
         EventKind::Intercepted { .. } => {
             world.add_grievance(Faction::FreeState, 3);
+        }
+        // Down the Lane Trail the river towns can't open the crates: a box
+        // on order rides home under the sacks, and in the hard year the
+        // Company's men at Tabor put another in the wagon bed.
+        EventKind::WagonBack {
+            teamster,
+            route_west: false,
+            ..
+        } => {
+            let family = world.npc(teamster).family;
+            let fam = &world.families[family as usize];
+            let ordered = fam.stores.arms.on_order.map_or(0, |(_, r)| r);
+            let (y, m, _) = world.day.date();
+            let company = fam.faction == Faction::FreeState
+                && y == 1856
+                && m <= 10
+                && world.rng.chance(LANE_RIFLE);
+            let rifles = ordered + company as u8;
+            if rifles > 0 {
+                let a = &mut world.families[family as usize].stores.arms;
+                a.on_order = None;
+                a.rifles += rifles;
+                a.cartridges += 25 * rifles as u16;
+                world.emit_child(ev, EventKind::ArmsArrived { family, rifles });
+            }
         }
         _ => {}
     }

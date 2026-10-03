@@ -321,11 +321,15 @@ pub fn monthly(world: &mut World) {
         if !world.families[f].farms() || world.head_of(fid).is_none() {
             continue;
         }
-        let p = if world.civic.filed[f] { 0.004 } else { 0.02 } * if spring { 2.0 } else { 1.0 };
+        let head = world.head_of(fid).unwrap();
+        // Jumpers pick the claim nobody will stand up for: the widow's, the
+        // newcomer's, the family with the other side all round it.
+        let easy = (2.0 - super::standing::word(world, head)).clamp(0.8, 1.8);
+        let p =
+            if world.civic.filed[f] { 0.004 } else { 0.02 } * if spring { 2.0 } else { 1.0 } * easy;
         if !world.rng.chance(p) {
             continue;
         }
-        let head = world.head_of(fid).unwrap();
         // Half the time it's the man next door moving a stake.
         let origin = world.families[f].farm;
         let neighbor = if world.rng.chance(0.5) {

@@ -9,13 +9,19 @@ use bleeding_kansas::sim::civic::Project;
 use bleeding_kansas::sim::economy::Choice;
 use bleeding_kansas::sim::family;
 use bleeding_kansas::sim::farmwork;
+use bleeding_kansas::sim::freight::{self, Route};
+use bleeding_kansas::sim::hands::{self, COMPANIES, Task};
 use bleeding_kansas::sim::homestead::{self, Improvement};
 use bleeding_kansas::sim::intrigue;
+use bleeding_kansas::sim::larder;
 use bleeding_kansas::sim::law;
 use bleeding_kansas::sim::life::Activity;
 use bleeding_kansas::sim::market::Good;
 use bleeding_kansas::sim::psyche::LifeStage;
 use bleeding_kansas::sim::railroad::{Answer, Status};
+use bleeding_kansas::sim::sickness::{self, Remedy};
+use bleeding_kansas::sim::wardrobe::{self, ITEMS};
+use bleeding_kansas::sim::warrant;
 use bleeding_kansas::sim::world::{NpcId, World};
 
 use crate::duel::Approach;
@@ -34,6 +40,34 @@ pub enum Sub {
     Sue,
     /// The workbench: cast, roll, split, and where the guns go.
     Bench,
+    /// Who's doing what on the place.
+    Hands,
+    /// Set one person to a job.
+    Assign(NpcId),
+    /// Who'd take your wages.
+    Hire,
+    /// Companies that ride for pay. `true`: the Free-State ones.
+    Guns(bool),
+    /// Whose place a company would ride on.
+    GunsOn(usize),
+    /// The justice's desk: papers, suits, and giving yourself up.
+    Justice,
+    /// Papers anyone could take.
+    Papers,
+    /// What you're wearing and what's in the trunk.
+    Dress,
+    /// Dunmore's dry goods.
+    Clothes,
+    /// Dunmore's physic shelf.
+    Medicines,
+    /// Who's sick in the house, and what can be done.
+    Sick,
+    /// One sick person: what to give them.
+    Tend(NpcId),
+    /// Dunmore's grocery shelf: coffee, sugar, bacon, cloth, nails.
+    Groceries,
+    /// Hitch up for the river.
+    Wagon,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -62,6 +96,44 @@ pub enum Cmd {
     OrderRifles,
     BuyGun,
     BuyLead,
+    /// Set someone to a job.
+    Assign(NpcId, Task),
+    Hire(NpcId),
+    LetGo(NpcId),
+    /// A company to sit on your place, three nights.
+    HireGuard(usize),
+    /// A company to ride on someone tonight.
+    HireRaid(usize, NpcId),
+    /// Take a paper for the bounty.
+    TakePaper(usize),
+    /// Go after the man on your paper.
+    RideAfter(usize),
+    /// Ride with the sheriff's men for a share.
+    RideWith(usize),
+    Surrender,
+    Run,
+    LieLow,
+    /// Put on the piece at this place in the trunk.
+    Wear(usize),
+    /// Take off what's in this slot.
+    TakeOff(usize),
+    BuyItem(u8),
+    BuyMed(Remedy),
+    Dose(NpcId, Remedy),
+    /// Sit up with them all day.
+    Nurse(NpcId),
+    /// Send for the doctor.
+    Doctor,
+    /// Bark and herbs off the creek bottoms.
+    GatherHerbs,
+    Delouse,
+    Quarantine(bool),
+    /// Take the wagon to the river by this road.
+    Haul(Route),
+    /// A blanket out of a lousy house.
+    FoulBlanket(NpcId),
+    /// Go through the fallen man's pockets.
+    Loot,
     BeSeen,
     /// Sleep till morning: the day ends now.
     Rest,
@@ -256,6 +328,185 @@ pub fn run(world: &mut World, cmd: Cmd) -> Outcome {
                 "Not with what's in your purse."
             });
         }
+        Cmd::Assign(id, t) => {
+            hands::assign(world, id, t);
+            out.next = Some(menu(world, Sub::Hands));
+            out.toast = Some(format!(
+                "{} will be {} from tomorrow.",
+                world.name(id),
+                t.label()
+            ));
+            return out;
+        }
+        Cmd::Hire(id) => {
+            if !hands::hire(world, id) {
+                return toast("They've thought better of it.");
+            }
+            out.next = Some(menu(world, Sub::Hands));
+            out.toast = news_since(world, before);
+            return out;
+        }
+        Cmd::LetGo(id) => {
+            hands::let_go(world, id);
+            out.next = Some(menu(world, Sub::Hands));
+            out.toast = news_since(world, before);
+            return out;
+        }
+        Cmd::HireGuard(c) => {
+            return toast(if hands::hire_guard(world, c, 3) {
+                "They'll be in the barn by dark: three nights, rifles, and your whiskey."
+            } else {
+                "Not with what's in your purse, or they're already here."
+            });
+        }
+        Cmd::HireRaid(c, t) => {
+            if !hands::hire_raid(world, c, t) {
+                return toast("Not tonight.");
+            }
+            out.toast = news_since(world, before)
+                .or_else(|| Some("They rode out after dark. You didn't go.".into()));
+            return out;
+        }
+        Cmd::TakePaper(i) => {
+            if !warrant::take(world, i) {
+                return toast("The justice won't give you that one.");
+            }
+            out.next = Some(menu(world, Sub::Papers));
+            out.toast = Some(
+                "The justice signs it over. Dead or alive pays, he says; alive pays better.".into(),
+            );
+            return out;
+        }
+        Cmd::RideAfter(i) => {
+            if !warrant::ride_after(world, i) {
+                return toast("Not today.");
+            }
+            if world.action.standoff.is_none() {
+                out.toast = news_since(world, before);
+            }
+            return out;
+        }
+        Cmd::RideWith(i) => warrant::ride_with(world, i),
+        Cmd::Surrender => warrant::surrender(world),
+        Cmd::Run => warrant::run(world),
+        Cmd::LieLow => {
+            if !warrant::lie_low(world) {
+                return toast("Not today.");
+            }
+            return toast(
+                "A week in the timber, a blanket and cold meat. Your people say they haven't seen you.",
+            );
+        }
+        Cmd::Wear(i) => {
+            wardrobe::wear(world, i);
+            out.next = Some(menu(world, Sub::Dress));
+            return out;
+        }
+        Cmd::TakeOff(s) => {
+            wardrobe::take_off(world, s);
+            out.next = Some(menu(world, Sub::Dress));
+            return out;
+        }
+        Cmd::BuyItem(i) => {
+            if !wardrobe::buy(world, i) {
+                return toast("Not with what's in your purse.");
+            }
+            out.next = Some(menu(world, Sub::Clothes));
+            out.toast = Some(format!(
+                "Dunmore wraps the {} in brown paper. It's in your trunk.",
+                ITEMS[i as usize].name
+            ));
+            return out;
+        }
+        Cmd::BuyMed(r) => {
+            if !sickness::buy(world, r) {
+                return toast("Not with what's in your purse.");
+            }
+            out.next = Some(menu(world, Sub::Medicines));
+            out.toast = Some(format!("A dose of {} for the chest.", r.label()));
+            return out;
+        }
+        Cmd::Dose(id, r) => {
+            if !sickness::dose(world, id, r) {
+                return toast("None left in the chest.");
+            }
+            out.next = Some(menu(world, Sub::Sick));
+            out.toast = Some(format!("{} gets the {}.", world.name(id), r.label()));
+            return out;
+        }
+        Cmd::Nurse(id) => sickness::nurse(world, id),
+        Cmd::Doctor => {
+            if !sickness::doctor(world, 0) {
+                return toast("Three dollars you haven't got.");
+            }
+            out.toast = news_since(world, before);
+            return out;
+        }
+        Cmd::GatherHerbs => {
+            if !day_free(world) {
+                return toast("Your day is spent.");
+            }
+            world.life.acted_on = Some(world.day);
+            let found = sickness::gather(world);
+            return toast(&if found.is_empty() {
+                "A day in the bottoms and nothing you'd trust.".to_string()
+            } else {
+                format!(
+                    "Back with {}.",
+                    found
+                        .iter()
+                        .map(|r| r.label())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            });
+        }
+        Cmd::Haul(route) => {
+            let today = world.day;
+            if world.life.acted_on == Some(today) || family::away(world).is_some() {
+                return toast("Not today.");
+            }
+            let cash = world.families[0].stores.cash;
+            if !freight::set_out(world, 0, route, cash) {
+                return toast("No team to pull it, or no money to spend.");
+            }
+            world.life.acted_on = Some(today);
+            let line = format!(
+                "You hitch up for {}. Back in {} days, God willing.",
+                route.label(),
+                route.days()
+            );
+            return toast(&line);
+        }
+        Cmd::Delouse => {
+            if !sickness::delouse(world) {
+                return toast("Not today.");
+            }
+            return toast(
+                "Every blanket in the kettle, the ticks burned. The house smells of lye and it's clean.",
+            );
+        }
+        Cmd::Quarantine(on) => {
+            sickness::quarantine(world, on);
+            out.next = Some(menu(world, Sub::Sick));
+            return out;
+        }
+        Cmd::FoulBlanket(t) => {
+            if !sickness::foul_blanket(world, t) {
+                return toast("Not today.");
+            }
+            return toast(
+                "They thanked you for it. Their youngest wrapped up in it before you'd left the yard.",
+            );
+        }
+        Cmd::Loot => {
+            let took = wardrobe::loot_fallen(world);
+            return toast(&if took.is_empty() {
+                "Nothing worth the taking.".to_string()
+            } else {
+                format!("You took {}.", took.join(", "))
+            });
+        }
         Cmd::Close => return out,
     };
     out.toast = news_since(world, before).or_else(|| {
@@ -359,6 +610,11 @@ fn after_dark(world: &World, t: NpcId) -> MenuSpec {
         ),
         when("Whisper against them", Cmd::Do(Activity::Slander(t)), free),
         when(
+            "Bring them a blanket (from your lousy bedding)",
+            Cmd::FoulBlanket(t),
+            free && world.sickness.lousy.contains(&0),
+        ),
+        when(
             "Ask for money to keep quiet",
             Cmd::Do(Activity::Blackmail(t)),
             free && leverage,
@@ -417,7 +673,10 @@ pub fn menu(world: &World, sub: Sub) -> MenuSpec {
                     };
                     when(label, Cmd::Do(Activity::Improve(imp)), free && !built)
                 })
-                .chain([item("Not today", Cmd::Close)])
+                .chain([
+                    item("Hitch the wagon...", Cmd::Open(Sub::Wagon)),
+                    item("Not today", Cmd::Close),
+                ])
                 .collect();
             MenuSpec::new(
                 "Build",
@@ -467,6 +726,9 @@ pub fn menu(world: &World, sub: Sub) -> MenuSpec {
                         format!("Buy bar lead, 5 lb: ${}", arms::LEAD_PRICE),
                         Cmd::BuyLead,
                     ),
+                    item("Groceries and hardware...", Cmd::Open(Sub::Groceries)),
+                    item("Dry goods...", Cmd::Open(Sub::Clothes)),
+                    item("Physic...", Cmd::Open(Sub::Medicines)),
                     item("Sell...", Cmd::Open(Sub::StoreSell)),
                     item("Put it on the book", Cmd::Choose(Choice::Borrow)),
                     item("Walk out", Cmd::Close),
@@ -512,6 +774,329 @@ pub fn menu(world: &World, sub: Sub) -> MenuSpec {
                     a.rails,
                     a.hide.label()
                 ),
+                items,
+            )
+        }
+        Sub::Hands => hands_menu(world),
+        Sub::Assign(id) => {
+            let now = hands::task(world, id);
+            let mut items: Vec<Item> = Task::ALL
+                .into_iter()
+                .map(|t| when(capitalize(t.label()), Cmd::Assign(id, t), t != now))
+                .collect();
+            if world.hands.is_hired(id) {
+                items.push(item("Let them go", Cmd::LetGo(id)));
+            }
+            items.push(item("Back", Cmd::Open(Sub::Hands)));
+            MenuSpec::new(
+                world.name(id).to_string(),
+                format!(
+                    "{} now. A watch at night sees riders before they reach the gate; whoever sits up is no use in the field.",
+                    capitalize(now.label())
+                ),
+                items,
+            )
+        }
+        Sub::Hire => {
+            let mut items: Vec<Item> = hands::candidates(world)
+                .into_iter()
+                .map(|id| {
+                    let n = world.npc(id);
+                    let hungry = world.families[n.family as usize].stores.desperate();
+                    item(
+                        format!(
+                            "{}{}",
+                            n.name,
+                            if hungry {
+                                " (the family is going hungry)"
+                            } else {
+                                ""
+                            }
+                        ),
+                        Cmd::Hire(id),
+                    )
+                })
+                .collect();
+            if items.is_empty() {
+                return MenuSpec::new(
+                    "Nobody's asking",
+                    "Nobody in the county wants your wages this month, or you've hands enough.",
+                    vec![item("Back", Cmd::Open(Sub::Hands))],
+                );
+            }
+            items.push(item("Back", Cmd::Open(Sub::Hands)));
+            MenuSpec::new(
+                "Hire a hand",
+                format!(
+                    "${} a month and board, paid on the first. Miss a month and they walk, and talk.",
+                    hands::WAGE
+                ),
+                items,
+            )
+        }
+        Sub::Guns(free_state) => {
+            let side = if free_state {
+                bleeding_kansas::sim::Faction::FreeState
+            } else {
+                bleeding_kansas::sim::Faction::ProSlavery
+            };
+            let mut items = Vec::new();
+            for (c, co) in COMPANIES.iter().enumerate() {
+                if co.faction != side || !hands::available(world, c) {
+                    continue;
+                }
+                let yours = hands::will_ride(world, c);
+                let cash = world.families[0].stores.cash;
+                items.push(when(
+                    format!(
+                        "{} to sit on your place, 3 nights (${})",
+                        capitalize(co.name),
+                        hands::guard_price(c, 3)
+                    ),
+                    Cmd::HireGuard(c),
+                    yours && cash >= hands::guard_price(c, 3) && hands::guarded(world).is_none(),
+                ));
+                items.push(when(
+                    format!(
+                        "{} to ride on someone tonight (${})...",
+                        capitalize(co.name),
+                        hands::raid_price(c)
+                    ),
+                    Cmd::Open(Sub::GunsOn(c)),
+                    yours && cash >= hands::raid_price(c) && action::night_free(world),
+                ));
+            }
+            if items.is_empty() {
+                return MenuSpec::new(
+                    "Nobody's for hire",
+                    "The companies are gone home, or not come yet.",
+                    vec![item("Leave it", Cmd::Close)],
+                );
+            }
+            items.push(item("Leave it", Cmd::Close));
+            MenuSpec::new(
+                "Men who ride for pay",
+                if world.npc(bleeding_kansas::sim::world::PLAYER).faction == side {
+                    "They drink on your money and talk on it after. The other side's paper hears everything eventually."
+                } else {
+                    "They look you over and don't like your politics. Not for any money."
+                },
+                items,
+            )
+        }
+        Sub::GunsOn(c) => {
+            let mut items: Vec<Item> = hands::raid_targets(world, c)
+                .into_iter()
+                .map(|t| {
+                    let fam = world.npc(t).family as usize;
+                    item(
+                        format!(
+                            "The {} place{}",
+                            world.families[fam].surname,
+                            if world.families[fam].barn_standing {
+                                ": burn the barn"
+                            } else {
+                                ": run off the stock"
+                            }
+                        ),
+                        Cmd::HireRaid(c, t),
+                    )
+                })
+                .collect();
+            items.push(item("Think better of it", Cmd::Close));
+            MenuSpec::new(
+                capitalize(COMPANIES[c].name),
+                "They'll go tonight. Nobody on that place will see your face, only theirs. What they say in their cups is their business.",
+                items,
+            )
+        }
+        Sub::Justice => justice_menu(world),
+        Sub::Dress => dress_menu(world),
+        Sub::Clothes => {
+            let cash = world.families[0].stores.cash;
+            let mut items: Vec<Item> = wardrobe::for_sale(world)
+                .into_iter()
+                .map(|i| {
+                    let it = &ITEMS[i as usize];
+                    let p = wardrobe::price(world, i);
+                    when(
+                        format!("{} (${p}){}", capitalize(it.name), perks(it)),
+                        Cmd::BuyItem(i),
+                        cash >= p,
+                    )
+                })
+                .collect();
+            items.push(item("Back", Cmd::Open(Sub::Store)));
+            MenuSpec::new(
+                "Dry goods",
+                format!("Bolts, hats, boots and notions off the Westport wagon. You have ${cash}."),
+                items,
+            )
+        }
+        Sub::Medicines => {
+            let cash = world.families[0].stores.cash;
+            let chest = world.families[0].stores.medicine;
+            let mut items: Vec<Item> = Remedy::ALL
+                .into_iter()
+                .filter(|r| r.price() > 0)
+                .map(|r| {
+                    when(
+                        format!(
+                            "{} (${}, {} in the chest)",
+                            capitalize(r.label()),
+                            r.price(),
+                            chest[r.index()]
+                        ),
+                        Cmd::BuyMed(r),
+                        cash >= r.price(),
+                    )
+                })
+                .collect();
+            items.push(item("Back", Cmd::Open(Sub::Store)));
+            MenuSpec::new(
+                "Physic",
+                "Peruvian bark for the ague, calomel for everything else, laudanum for when nothing works.",
+                items,
+            )
+        }
+        Sub::Sick => sick_menu(world),
+        Sub::Groceries => {
+            let m = &world.market;
+            let cash = world.families[0].stores.cash;
+            let line = |g: Good| format!("{} ${:.2}/{}", g.label(), m.price(g), g.unit());
+            MenuSpec::new(
+                "Dunmore's shelf",
+                format!("{}. You have ${cash}.", larder::describe(world, 0)),
+                vec![
+                    item(
+                        format!("Coffee, 4 lb: {}", line(Good::Coffee)),
+                        Cmd::Buy(Good::Coffee, 4.0),
+                    ),
+                    item(
+                        format!("Sugar, 5 lb: {}", line(Good::Sugar)),
+                        Cmd::Buy(Good::Sugar, 5.0),
+                    ),
+                    item(
+                        format!("Side bacon, 20 lb: {}", line(Good::Bacon)),
+                        Cmd::Buy(Good::Bacon, 20.0),
+                    ),
+                    item(
+                        format!("Cloth, 4 yd: {}", line(Good::Cloth)),
+                        Cmd::Buy(Good::Cloth, 4.0),
+                    ),
+                    item(
+                        format!("Nails and iron, 5 lb: {}", line(Good::Iron)),
+                        Cmd::Buy(Good::Iron, 5.0),
+                    ),
+                    item("Back", Cmd::Open(Sub::Store)),
+                ],
+            )
+        }
+        Sub::Wagon => {
+            let h = &world.families[0].stores;
+            let team = h.oxen >= 2;
+            let free = world.life.acted_on != Some(world.day) && family::away(world).is_none();
+            let mut items: Vec<Item> = Route::ALL
+                .into_iter()
+                .map(|r| {
+                    let risk = freight::stop_odds(world, bleeding_kansas::sim::PLAYER, r);
+                    let warn = if risk >= 0.3 {
+                        ", and the Missourians are stopping wagons"
+                    } else {
+                        ""
+                    };
+                    when(
+                        format!(
+                            "{}: {} days, coffee ${:.2}/lb{warn}",
+                            r.label(),
+                            r.days(),
+                            freight::river_price(Good::Coffee, r)
+                        ),
+                        Cmd::Haul(r),
+                        team && free,
+                    )
+                })
+                .collect();
+            items.push(item("Not now", Cmd::Close));
+            MenuSpec::new(
+                "The wagon",
+                if team {
+                    format!(
+                        "A ton to the load. The neighbors will send orders. You have ${}.",
+                        h.cash
+                    )
+                } else {
+                    "One ox won't pull a loaded wagon. You need a yoke.".to_string()
+                },
+                items,
+            )
+        }
+        Sub::Tend(id) => {
+            let chest = world.families[0].stores.medicine;
+            let mut items: Vec<Item> = Remedy::ALL
+                .into_iter()
+                .filter(|r| chest[r.index()] > 0)
+                .map(|r| {
+                    item(
+                        format!("Give {} ({} left)", r.label(), chest[r.index()]),
+                        Cmd::Dose(id, r),
+                    )
+                })
+                .collect();
+            items.push(when(
+                "Sit up with them all day",
+                Cmd::Nurse(id),
+                day_free(world),
+            ));
+            items.push(item("Back", Cmd::Open(Sub::Sick)));
+            let what = world
+                .sickness
+                .sick(id)
+                .map(|c| c.disease.label())
+                .unwrap_or("nothing now");
+            MenuSpec::new(
+                world.name(id).to_string(),
+                format!(
+                    "Down with {what}. Boiled water and broth do more for the bowel fevers than anything in a bottle."
+                ),
+                items,
+            )
+        }
+        Sub::Papers => {
+            let mut items: Vec<Item> = Vec::new();
+            for i in warrant::open_papers(world) {
+                let w = &world.warrants.list[i];
+                let name = world.name(w.accused).to_string();
+                if w.hunter == Some(bleeding_kansas::sim::world::PLAYER) {
+                    items.push(when(
+                        format!("Ride after {name} (${})", w.bounty),
+                        Cmd::RideAfter(i),
+                        free && world.action.standoff.is_none() && !warrant::held(world, w.accused),
+                    ));
+                } else {
+                    items.push(when(
+                        format!("Take the paper on {name} (${})", w.bounty),
+                        Cmd::TakePaper(i),
+                        true,
+                    ));
+                    items.push(when(
+                        format!("Ride with the sheriff's men after {name}"),
+                        Cmd::RideWith(i),
+                        free,
+                    ));
+                }
+            }
+            if items.is_empty() {
+                return MenuSpec::new(
+                    "No papers",
+                    "The justice has nobody wanted this week that you could fetch.",
+                    vec![item("Back", Cmd::Open(Sub::Justice))],
+                );
+            }
+            items.push(item("Back", Cmd::Open(Sub::Justice)));
+            MenuSpec::new(
+                "Wanted",
+                "Paid by the Territory on delivery; half for a body. The justice doesn't ask which side you're on. He knows.",
                 items,
             )
         }
@@ -601,6 +1186,230 @@ pub fn menu(world: &World, sub: Sub) -> MenuSpec {
             )
         }
     }
+}
+
+/// What a piece does, for a shop line: warm, and whatever it helps.
+fn perks(it: &wardrobe::Item) -> String {
+    let mut p: Vec<String> = Vec::new();
+    if it.warmth >= 0.2 {
+        p.push("warm".into());
+    }
+    for &(s, _) in it.bonus.skills {
+        p.push(s.label().into());
+    }
+    if it.bonus.stealth > 0.0 {
+        p.push("quiet".into());
+    }
+    if it.bonus.stealth < 0.0 {
+        p.push("seen a mile off".into());
+    }
+    if it.bonus.nerve > 0.0 {
+        p.push("nerve".into());
+    }
+    if it.bonus.draw > 0.0 {
+        p.push("quick draw".into());
+    }
+    if it.bonus.sway > 0.0 {
+        p.push("steady aim".into());
+    }
+    if it.bonus.charm > 0.0 {
+        p.push("charm".into());
+    }
+    if let Some(side) = it.mark {
+        p.push(format!("reads {}", side.label()));
+    }
+    if p.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", p.join(", "))
+    }
+}
+
+fn dress_menu(world: &World) -> MenuSpec {
+    let me = bleeding_kansas::sim::world::PLAYER;
+    let o = &world.npc(me).outfit;
+    let mut items: Vec<Item> = Vec::new();
+    for (s, w) in o.on.iter().enumerate() {
+        if let Some(w) = w {
+            let it = &ITEMS[w.item as usize];
+            let taken = if w.from.is_some() { " (taken)" } else { "" };
+            items.push(item(
+                format!("Take off the {}{taken}", it.name),
+                Cmd::TakeOff(s),
+            ));
+        }
+    }
+    for (i, w) in world.wardrobe.closet.iter().enumerate() {
+        let it = &ITEMS[w.item as usize];
+        let taken = match w.from {
+            Some((whose, _)) => format!(" ({}'s)", world.name(whose)),
+            None => String::new(),
+        };
+        items.push(item(
+            format!("Put on the {}{taken}{}", it.name, perks(it)),
+            Cmd::Wear(i),
+        ));
+    }
+    items.push(item("Done", Cmd::Close));
+    let looks: Vec<&str> = o.looks().iter().map(|l| l.name).collect();
+    MenuSpec::new(
+        "Dress",
+        format!(
+            "{}.{}{}",
+            capitalize(&wardrobe::describe(world, me)),
+            if looks.is_empty() {
+                String::new()
+            } else {
+                format!(" The county reads you as {}.", looks.join(" and "))
+            },
+            match o.colors() {
+                Some(side) => format!(" From a distance: {}.", side.label()),
+                None => String::new(),
+            }
+        ),
+        items,
+    )
+}
+
+fn sick_menu(world: &World) -> MenuSpec {
+    let mut items: Vec<Item> = world
+        .living()
+        .filter(|n| n.family == 0)
+        .filter_map(|n| {
+            world.sickness.sick(n.id).map(|c| {
+                item(
+                    format!("{}: {}", n.name, c.disease.label()),
+                    Cmd::Open(Sub::Tend(n.id)),
+                )
+            })
+        })
+        .collect();
+    let cash = world.families[0].stores.cash;
+    items.push(when(
+        format!("Send for {} (${})", sickness::DOCTOR, sickness::DOCTOR_FEE),
+        Cmd::Doctor,
+        cash >= sickness::DOCTOR_FEE,
+    ));
+    let kept = world.sickness.quarantine.contains(&0);
+    items.push(item(
+        if kept {
+            "Let the children go to school and meeting again"
+        } else {
+            "Keep the children home"
+        },
+        Cmd::Quarantine(!kept),
+    ));
+    if world.sickness.lousy.contains(&0) {
+        items.push(when("Boil the bedding", Cmd::Delouse, day_free(world)));
+    }
+    items.push(item("Leave it", Cmd::Close));
+    let chest = world.families[0].stores.medicine;
+    let stock: Vec<String> = Remedy::ALL
+        .into_iter()
+        .filter(|r| chest[r.index()] > 0)
+        .map(|r| format!("{} {}", chest[r.index()], r.label()))
+        .collect();
+    MenuSpec::new(
+        "The sick",
+        format!(
+            "In the chest: {}.{}",
+            if stock.is_empty() {
+                "nothing".to_string()
+            } else {
+                stock.join(", ")
+            },
+            if world.sickness.lousy.contains(&0) {
+                " There are lice in the bedding."
+            } else {
+                ""
+            }
+        ),
+        items,
+    )
+}
+
+/// Who works the place, and at what.
+fn hands_menu(world: &World) -> MenuSpec {
+    let mut items: Vec<Item> = hands::workers(world)
+        .into_iter()
+        .map(|id| {
+            let hired = if world.hands.is_hired(id) {
+                ", hired"
+            } else {
+                ""
+            };
+            item(
+                format!(
+                    "{}{hired}: {}",
+                    world.name(id),
+                    hands::task(world, id).label()
+                ),
+                Cmd::Open(Sub::Assign(id)),
+            )
+        })
+        .collect();
+    items.push(when(
+        "Hire a hand...",
+        Cmd::Open(Sub::Hire),
+        world.hands.hired.len() < hands::MAX_HANDS,
+    ));
+    items.push(item("Leave them to it", Cmd::Close));
+    let guard = hands::guarded(world)
+        .map(|c| format!(" {} are in the barn.", capitalize(c.name)))
+        .unwrap_or_default();
+    MenuSpec::new(
+        "Hands",
+        format!(
+            "Grown kin and hired hands take one job each. The rest of the house does what it can.{guard}"
+        ),
+        items,
+    )
+}
+
+/// The justice of the peace: suits, papers, and a cell if you want one.
+fn justice_menu(world: &World) -> MenuSpec {
+    let free = day_free(world);
+    let me = bleeding_kansas::sim::world::PLAYER;
+    let mut items = vec![
+        item("Sue a neighbor...", Cmd::Open(Sub::Sue)),
+        item("Who's wanted...", Cmd::Open(Sub::Papers)),
+    ];
+    let price = warrant::price_on(world, me);
+    if price > 0 {
+        items.push(when("Give yourself up", Cmd::Surrender, free));
+    }
+    items.push(item("Leave", Cmd::Close));
+    MenuSpec::new(
+        "The justice of the peace",
+        if price > 0 {
+            format!(
+                "There's a paper on you in the drawer: ${price} on delivery. The justice looks at you like a man counting money."
+            )
+        } else {
+            "Appointed by the bogus legislature. He writes papers on what people swear to, and people swear to what they believe.".to_string()
+        },
+        items,
+    )
+}
+
+/// What a wanted man can do at home.
+pub fn wanted_choices(world: &World) -> Vec<Item> {
+    let me = bleeding_kansas::sim::world::PLAYER;
+    if warrant::price_on(world, me) == 0 {
+        return Vec::new();
+    }
+    vec![
+        when(
+            "Lie low in the timber a week",
+            Cmd::LieLow,
+            day_free(world) && world.warrants.lying_low.is_none(),
+        ),
+        when(
+            "Light out for the States (six weeks)",
+            Cmd::Run,
+            day_free(world),
+        ),
+    ]
 }
 
 /// The door: what someone at your house can do right now.
