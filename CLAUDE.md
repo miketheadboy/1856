@@ -90,6 +90,7 @@ Sim modules (`src/sim/`):
 | `mortality` | childhood sickness by age, season, frailty, hunger and exposure |
 | `geography` | the county map at half a mile per tile; terrain effects |
 | `chronicle` | text for every event; cascade trees; lineage; "wars nobody started" |
+| `marks` | what a life leaves on a person, each earned by one event and read by other systems: came through the fever (sits up with the dead unafraid, nurses better), has killed a man (private; weariness spares more, and the anniversary comes back on him, with his victim's spirit), buried a child (stays the hand at a house with children; grieves again a year on), raised an enemy's barn, turned riders back at the fence, kept a station (private; the next knock is easier), took the fifty dollars (private; the second time is easier, and a lukewarm conscience comes back in a month), knows the river road (stopped half as often), married across the line ("their side" weighs half), the starving time (the house lays by more), reads the county's letters. Public marks move `standing`, so blame, oaths, credit and gossip feel them |
 | `audit` | the books against each other: every system's state checked against the others' (dead men sick, hired or jailed; papers nobody swore to; coats in hat slots; deaths with no event). `lab audit` and `the_books_agree_every_day` |
 | `debug` | daily metrics, event trace, `explain_npc` / `explain_blame` / `explain_price` |
 | `calendar`, `rng` | `Day` (day 0 = 1 Nov 1855), seeded SplitMix64 |
@@ -119,6 +120,8 @@ cargo run --bin lab --no-default-features -- sick --seeds 20 --days 730
 cargo run --bin lab --no-default-features -- dress
 cargo run --release --bin lab --no-default-features -- audit --seeds 30 --days 730
 cargo run --release --bin lab --no-default-features -- webs --seeds 30 --days 730
+cargo run --release --bin lab --no-default-features -- matrix --seeds 30 --days 730
+cargo run --release --bin lab --no-default-features -- marks --seeds 30 --days 730
 cargo run --release --bin lab --no-default-features -- standing --seeds 30 --days 730
 cargo run --release --bin lab --no-default-features -- larder --days 400 --seeds 30
 cargo run --bin headless --no-default-features -- --seed 15 --truth
@@ -166,7 +169,11 @@ libxkbcommon-x11-0` to run it headless for screenshots. Set
    it happens. New cross-system facts get a rule in `audit::check`; run
    `lab audit` after any change that touches two systems. A new web (one
    system's event moving another's books) goes in `lab webs`'s watch list,
-   so a cut wire shows as "never fired".
+   so a cut wire shows as "never fired". Every event kind belongs to a
+   system in `debug::OWNERS`; `lab matrix` draws the systems as a graph
+   (same-day and delayed links, three-system chains) and names the islands.
+   When an effect has a cause on an earlier day, pass it as `caused_by`: a
+   link the log doesn't record is a link the matrix can't see.
 8. **Tests live with their module** (`#[cfg(test)] mod tests` at the bottom).
    Cross-system and gate tests live in `src/sim/tests.rs`.
 

@@ -341,8 +341,12 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             accused,
             convicted,
             fine,
+            days,
             ..
         } => {
+            if convicted && let Some(about) = ev.caused_by {
+                grudge_the_swearers(world, ev, accused, about, days);
+            }
             let fam = world.npc(accused).family as usize;
             world.families[fam].stores.cash -= fine as i32;
             if world.families[fam].stores.cash < 0 {
@@ -364,6 +368,56 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             }
         }
         _ => {}
+    }
+}
+
+/// His people learn whose oaths put him there, and so does he, the day he
+/// walks out of the Lecompton jail (a grudge on a delay: `schedule`).
+fn grudge_the_swearers(
+    world: &mut World,
+    ev: &WorldEvent,
+    accused: NpcId,
+    about: EventId,
+    days: u16,
+) {
+    let fam = world.npc(accused).family;
+    let swore: Vec<NpcId> = world
+        .living()
+        .filter(|n| n.family != fam)
+        .filter(|n| {
+            n.memory_of(about).is_some_and(|m| {
+                m.believed == super::events::Suspect::Person(accused) && m.confidence >= 40
+            })
+        })
+        .map(|n| n.id)
+        .collect();
+    let kin: Vec<NpcId> = world
+        .living()
+        .filter(|n| n.family == fam && n.id != accused)
+        .map(|n| n.id)
+        .collect();
+    for &s in &swore {
+        for &k in &kin {
+            world.emit_child(
+                ev,
+                EventKind::OpinionChange {
+                    holder: k,
+                    target: s,
+                    delta: -8,
+                    after: 0,
+                },
+            );
+        }
+        world.schedule(
+            (days as u32).max(1),
+            EventKind::OpinionChange {
+                holder: accused,
+                target: s,
+                delta: -20,
+                after: 0,
+            },
+            ev.id,
+        );
     }
 }
 

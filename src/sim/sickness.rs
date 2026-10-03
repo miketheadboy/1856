@@ -791,7 +791,13 @@ pub fn tend(world: &mut World) {
             let name = world
                 .head_of(fam)
                 .map_or(0.5, |h| super::standing::word(world, h).min(1.0));
-            let p = if well { 0.25 } else { 0.0 } + 0.2 * name;
+            // Someone in the house who had it and lived knows what to do.
+            let knows = if super::marks::house_has(world, fam, super::marks::Mark::CameThrough) {
+                0.2
+            } else {
+                0.0
+            };
+            let p = if well { 0.25 } else { 0.0 } + 0.2 * name + knows;
             if world.rng.chance(p)
                 && let Some(x) = world.sickness.cases.iter_mut().find(|x| x.who == c.who)
             {
@@ -932,7 +938,10 @@ fn wake(world: &mut World, ev: &WorldEvent, dead: NpcId, d: Disease) {
     let (mut came, mut away) = (Vec::new(), Vec::new());
     for f in friends {
         let f_fam = world.npc(f).family;
-        if world.sickness.quarantine.contains(&f_fam) {
+        // One who came through the fever isn't afraid of it.
+        if world.sickness.quarantine.contains(&f_fam)
+            && !super::marks::has(world, f, super::marks::Mark::CameThrough)
+        {
             away.push(f);
         } else {
             came.push(f);

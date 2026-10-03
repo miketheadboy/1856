@@ -88,6 +88,7 @@ pub fn check(world: &World) -> Vec<Breach> {
     gossip(&mut b);
     lies(&mut b);
     wagons(&mut b);
+    marks(&mut b);
     b.out
 }
 
@@ -883,9 +884,10 @@ fn wagons(b: &mut Books) {
                     );
                 }
             }
-            // Only the sick man's own house goes looking for a poisoner.
+            // Only the sick man's own house goes looking for a poisoner (the
+            // rest of the county hears it told: a cause, not a parent).
             (EventKind::Belief { holder, .. }, EventKind::FellSick { who, .. })
-                if w.npc(*holder).family != w.npc(*who).family =>
+                if e.parent == Some(cause) && w.npc(*holder).family != w.npc(*who).family =>
             {
                 b.breach(
                     "fever-blame",
@@ -907,6 +909,46 @@ fn wagons(b: &mut Books) {
             b.breach(
                 "larder-garden",
                 format!("the {}s' garden {}", f.surname, l.garden),
+            );
+        }
+    }
+}
+
+/// Every mark stands on the event that earned it, once.
+fn marks(b: &mut Books) {
+    let w = b.world;
+    let mut seen: Vec<(NpcId, super::marks::Mark)> = Vec::new();
+    for h in &w.marks.held {
+        if !b.exists("mark", h.who) {
+            continue;
+        }
+        if seen.contains(&(h.who, h.mark)) {
+            b.breach(
+                "mark-twice",
+                format!("{} {} twice", b.who(h.who), h.mark.label()),
+            );
+        }
+        seen.push((h.who, h.mark));
+        match w.events.get(h.by as usize) {
+            Some(e) if super::marks::earns(&e.kind, h.mark) => {}
+            _ => b.breach(
+                "mark-unearned",
+                format!(
+                    "{} {} on #{}, which can't earn it",
+                    b.who(h.who),
+                    h.mark.label(),
+                    h.by
+                ),
+            ),
+        }
+        if h.mark == super::marks::Mark::BuriedAChild
+            && let Some(EventKind::Death { victim, .. } | EventKind::Perished { victim, .. }) =
+                w.events.get(h.by as usize).map(|e| &e.kind)
+            && w.npc(*victim).family != w.npc(h.who).family
+        {
+            b.breach(
+                "mark-buried",
+                format!("{} buried a child not their own", b.who(h.who)),
             );
         }
     }

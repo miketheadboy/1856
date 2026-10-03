@@ -36,6 +36,11 @@
 //!                            standing is wrongly blamed, papered, convicted, jumped
 //!   audit                    every system's books against the others', every day,
 //!                            over --seeds: breaches by rule with a first example
+//!   matrix                   every system against every other over --seeds: cause ->
+//!                            effect between systems, same-day and delayed, the
+//!                            three-system chains, and systems nothing reaches
+//!   marks                    what lives leave on people over --seeds: how many, who
+//!                            holds them, and how often they come back
 //!   webs                     which events cause which, over --seeds: every cause ->
 //!                            effect pair the bus carried, and the links that never fired
 //!   metrics <file.csv>       daily metrics for charts
@@ -131,6 +136,8 @@ fn main() {
         "standing" => standing_lens(&o),
         "larder" => larder_lens(&o),
         "webs" => webs_lens(&o),
+        "matrix" => matrix_lens(&o),
+        "marks" => marks_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
@@ -196,6 +203,137 @@ fn law_lens(o: &Opts) {
 }
 
 /// The county's tables on one day, then the river trade across seeds.
+/// Every system against every other: for each event with a parent (same
+/// day) or a cause (a later day), the pair of owning systems; and for each
+/// grandchild, the three-system chain. Empty rows are islands.
+fn matrix_lens(o: &Opts) {
+    use bleeding_kansas::sim::debug::{kind_name, system_of};
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut same: BTreeMap<(&str, &str), u32> = BTreeMap::new();
+    let mut later: BTreeMap<(&str, &str), u32> = BTreeMap::new();
+    let mut chains: BTreeMap<(&str, &str, &str), u32> = BTreeMap::new();
+    let mut unowned: BTreeSet<String> = BTreeSet::new();
+    let mut systems: BTreeSet<&str> = BTreeSet::new();
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        let up = |e: &bleeding_kansas::sim::WorldEvent| e.parent.or(e.caused_by);
+        for e in &w.events {
+            let to = system_of(&e.kind);
+            if to == "?" {
+                unowned.insert(kind_name(&e.kind));
+            }
+            systems.insert(to);
+            let Some(c) = up(e) else { continue };
+            let ce = &w.events[c as usize];
+            let from = system_of(&ce.kind);
+            if from != to {
+                let book = if e.parent.is_some() {
+                    &mut same
+                } else {
+                    &mut later
+                };
+                *book.entry((from, to)).or_default() += 1;
+            }
+            if let Some(g) = up(ce) {
+                let first = system_of(&w.events[g as usize].kind);
+                if first != from && from != to && first != to {
+                    *chains.entry((first, from, to)).or_default() += 1;
+                }
+            }
+        }
+    }
+    let n = o.seeds as f32;
+    let mut out_deg: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut in_deg: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for &(a, b) in same.keys().chain(later.keys()) {
+        out_deg.entry(a).or_default().insert(b);
+        in_deg.entry(b).or_default().insert(a);
+    }
+    println!(
+        "{} systems; {} same-day links and {} delayed links between them ({} seeds x {} days)\n",
+        systems.len(),
+        same.len(),
+        later.len(),
+        o.seeds,
+        o.days
+    );
+    println!("{:<13} {:>4} {:>4}  reaches", "system", "out", "in");
+    for s in &systems {
+        let outs = out_deg.get(s).map_or(0, |x| x.len());
+        let ins = in_deg.get(s).map_or(0, |x| x.len());
+        let reach: Vec<&str> = out_deg
+            .get(s)
+            .map_or(Vec::new(), |x| x.iter().copied().collect());
+        println!("{s:<13} {outs:>4} {ins:>4}  {}", reach.join(" "));
+    }
+    let mut d: Vec<_> = later.iter().collect();
+    d.sort_by(|a, b| b.1.cmp(a.1));
+    println!("\ndelayed (a later day), per seed:");
+    for ((a, b), c) in d.iter().take(25) {
+        println!("  {:>8.2}  {a} -> {b}", **c as f32 / n);
+    }
+    let mut t: Vec<_> = chains.iter().collect();
+    t.sort_by(|a, b| b.1.cmp(a.1));
+    println!(
+        "\n{} three-system chains; the commonest, per seed:",
+        t.len()
+    );
+    for ((a, b, c), k) in t.iter().take(30) {
+        println!("  {:>8.2}  {a} -> {b} -> {c}", **k as f32 / n);
+    }
+    let islands: Vec<&&str> = systems
+        .iter()
+        .filter(|s| !out_deg.contains_key(*s) && !in_deg.contains_key(*s))
+        .collect();
+    if !islands.is_empty() {
+        println!("\nislands (nothing in, nothing out): {islands:?}");
+    }
+    if !unowned.is_empty() {
+        println!("\nevents no system claims (add to debug::OWNERS): {unowned:?}");
+        std::process::exit(1);
+    }
+}
+
+/// What lives leave on people.
+fn marks_lens(o: &Opts) {
+    use bleeding_kansas::sim::marks::Mark;
+    let mut count = [0u32; 11];
+    let mut back = 0u32;
+    let mut example: [Option<String>; 11] = Default::default();
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        for h in &w.marks.held {
+            let i = Mark::ALL.iter().position(|m| *m == h.mark).unwrap();
+            count[i] += 1;
+            if example[i].is_none() {
+                example[i] = Some(format!("{} (seed {seed}, {})", w.name(h.who), h.day));
+            }
+        }
+        back += w
+            .events
+            .iter()
+            .filter(|e| matches!(e.kind, EventKind::Remembered { .. }))
+            .count() as u32;
+    }
+    let n = o.seeds as f32;
+    println!("marks per seed over {} days ({} seeds):", o.days, o.seeds);
+    for (i, m) in Mark::ALL.iter().enumerate() {
+        println!(
+            "  {:>6.2}  {:<34} {:<8} {}",
+            count[i] as f32 / n,
+            m.label(),
+            if m.public() { "known" } else { "private" },
+            example[i].clone().unwrap_or_default()
+        );
+    }
+    println!(
+        "\n{:.2} marks came back on their holders per seed",
+        back as f32 / n
+    );
+}
+
 /// The bus as a graph: for every event with a parent or a cause, the pair
 /// (cause kind -> effect kind), tallied over seeds. A web that should hold
 /// and shows zero is a wire cut somewhere.
@@ -260,14 +398,29 @@ fn webs_lens(o: &Opts) {
     // The webs this lens was built to watch. (WagonStopped -> Headline is
     // rare by history: the blockade summer is the summer the Free-State
     // presses were in the river. WagonBack -> FellSick, cholera off the
-    // levee, needs a cholera summer and a wagon in it: ~1 seed in 50.)
+    // levee, needs a cholera summer and a wagon in it: ~1 seed in 50; and
+    // Wake -> FellSick, a friend catching it at the burying, ~1 in 30.)
     let expect = [
         ("WagonOut", "Freedom"),
         ("WagonBack", "ArmsArrived"),
         ("WagonStopped", "Belief"),
         ("Perished", "Wake"),
-        ("Wake", "FellSick"),
         ("FellSick", "Belief"),
+        ("Death", "MarkEarned"),
+        ("Recovered", "MarkEarned"),
+        ("MarkEarned", "Remembered"),
+        ("Remembered", "SpiritSeen"),
+        ("Desperation", "MarkEarned"),
+        ("Brawl", "OpinionChange"),
+        ("Tried", "OpinionChange"),
+        ("PriceMove", "OpinionChange"),
+        ("Searched", "OpinionChange"),
+        ("StandCut", "Trespass"),
+        ("Trespass", "Complaint"),
+        ("Death", "RollPadded"),
+        ("BeeHeld", "FeudEnded"),
+        ("Muster", "Wounded"),
+        ("BuffaloHunt", "Complaint"),
     ];
     let cut: Vec<_> = expect
         .iter()

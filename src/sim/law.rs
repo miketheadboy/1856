@@ -527,16 +527,18 @@ fn close_muster(world: &mut World, i: usize) {
         Faction::ProSlavery => c.pro_slavery,
     };
     let since = world.day.0.saturating_sub(365);
-    let lately_dead: Vec<NpcId> = world
+    let lately_dead: Vec<(NpcId, super::events::EventId)> = world
         .events
         .iter()
         .rev()
         .take_while(|e| e.day.0 >= since)
         .filter_map(|e| match e.kind {
-            EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => Some(victim),
+            EventKind::Death { victim, .. } | EventKind::Perished { victim, .. } => {
+                Some((victim, e.id))
+            }
             _ => None,
         })
-        .filter(|&v| {
+        .filter(|&(v, _)| {
             v != PLAYER
                 && side_called(world.npc(v).faction)
                 && !is_woman(&world.npc(v).name)
@@ -545,14 +547,15 @@ fn close_muster(world: &mut World, i: usize) {
         })
         .collect();
     let mut padded = std::mem::take(&mut world.law.padded).len() as u8;
-    for v in lately_dead {
+    for (v, died) in lately_dead {
         if world.rng.chance(0.3) {
+            // The roll stands on the grave.
             world.emit_root(
                 EventKind::RollPadded {
                     name: v,
                     index: i as u8,
                 },
-                None,
+                Some(died),
             );
             padded += 1;
         }
@@ -591,7 +594,7 @@ fn close_muster(world: &mut World, i: usize) {
         }
     }
     // A fight: men from this county shot at each other.
-    let mut wounded = 0u8;
+    let mut shot: Vec<(NpcId, NpcId)> = Vec::new();
     if c.fight {
         for &j in &joined {
             let enemies: Vec<NpcId> = joined
@@ -601,28 +604,27 @@ fn close_muster(world: &mut World, i: usize) {
                 .collect();
             if !enemies.is_empty() && world.rng.chance(0.08) {
                 let by = enemies[world.rng.range(0, enemies.len() as u32) as usize];
-                world.emit_root(
-                    EventKind::Wounded {
-                        victim: j,
-                        attacker: by,
-                    },
-                    None,
-                );
-                wounded += 1;
+                shot.push((j, by));
             }
         }
     }
-    world.emit_root(
+    let muster = world.emit_root(
         EventKind::Muster {
             index: i as u8,
             joined: joined.len() as u8,
             dodged: dodgers.len() as u8,
-            wounded,
+            wounded: shot.len() as u8,
             you: joined.contains(&PLAYER),
             padded,
         },
         None,
     );
+    // Men shot at the muster: the wound stands on the muster (`law` ->
+    // the county's violence, its blame, its oaths).
+    let parent = world.events[muster as usize].clone();
+    for (victim, attacker) in shot {
+        world.emit_child(&parent, EventKind::Wounded { victim, attacker });
+    }
 }
 
 #[cfg(test)]

@@ -431,6 +431,25 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
                 n.emotions.anger += 15.0;
             }
             world.add_grievance(Faction::FreeState, 2);
+            // The house blames the justice who sent the posse (`law`).
+            if let Some(j) = world.law.justice {
+                let house: Vec<super::world::NpcId> = world
+                    .living()
+                    .filter(|n| n.family == family && n.id != j)
+                    .map(|n| n.id)
+                    .collect();
+                for h in house {
+                    world.emit_child(
+                        ev,
+                        EventKind::OpinionChange {
+                            holder: h,
+                            target: j,
+                            delta: -15,
+                            after: 0,
+                        },
+                    );
+                }
+            }
         }
         EventKind::Intercepted { .. } => {
             world.add_grievance(Faction::FreeState, 3);

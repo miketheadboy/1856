@@ -133,15 +133,22 @@ pub fn road_closed(world: &World, teamster: NpcId, route: Route) -> bool {
 
 /// The chance the Missourians stop this wagon on the way home.
 pub fn stop_odds(world: &World, teamster: NpcId, route: Route) -> f32 {
-    match route {
-        Route::LaneTrail => 0.0,
-        Route::Westport if road_closed(world, teamster, route) => 0.5,
-        // Even in a quiet year a Free-State wagon got looked over.
-        Route::Westport if world.npc(teamster).faction == Faction::FreeState => {
-            0.02 + (world.grievance[1] as f32 / 2000.0).clamp(0.0, 0.1)
+    // A man who knows the fords and the ferrymen goes round them (`marks`).
+    let knows = if super::marks::has(world, teamster, super::marks::Mark::KnowsTheRiver) {
+        0.5
+    } else {
+        1.0
+    };
+    knows
+        * match route {
+            Route::LaneTrail => 0.0,
+            Route::Westport if road_closed(world, teamster, route) => 0.5,
+            // Even in a quiet year a Free-State wagon got looked over.
+            Route::Westport if world.npc(teamster).faction == Faction::FreeState => {
+                0.02 + (world.grievance[1] as f32 / 2000.0).clamp(0.0, 0.1)
+            }
+            Route::Westport => 0.0,
         }
-        Route::Westport => 0.0,
-    }
 }
 
 /// River price for a unit of a good.

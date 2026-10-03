@@ -91,6 +91,14 @@ pub fn parts(world: &World, id: NpcId) -> Vec<Position> {
     if world.warrants.record.contains(&id) {
         out.push(pos("a jailbird", 0.6, 0.55));
     }
+    // What a life has left on them that the county knows of (`marks`).
+    for m in super::marks::of(world, id) {
+        if m.public()
+            && let Some((w, r)) = m.standing()
+        {
+            out.push(pos(m.label(), w, r));
+        }
+    }
     if super::freight::short_weight(world, id) {
         out.push(pos("gave short weight", 0.8, 0.85));
     }

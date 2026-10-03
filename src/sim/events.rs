@@ -455,6 +455,18 @@ pub enum EventKind {
         teamster: NpcId,
         seized: u16,
     },
+    /// A life left its mark on someone (`marks`).
+    MarkEarned {
+        who: NpcId,
+        mark: super::marks::Mark,
+    },
+    /// A mark comes back on its holder: the anniversary of a killing, the
+    /// year after a child's burying, the month after the reward was spent.
+    Remembered {
+        who: NpcId,
+        mark: super::marks::Mark,
+        years: u8,
+    },
     /// The burying of one dead of a catching sickness: friends sat up with
     /// the body and some carried it home (`sickness`). Friends who kept away
     /// for fear of it are remembered for keeping away.

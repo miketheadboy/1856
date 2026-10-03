@@ -261,6 +261,8 @@ pub struct World {
     pub sickness: super::sickness::Sickness,
     /// Wagons on the road to the river (`freight`).
     pub freight: super::freight::Freight,
+    /// What lives have left on people (`marks`).
+    pub marks: super::marks::Marks,
 }
 
 const FAMILIES: [(&str, Faction); 8] = [
@@ -554,6 +556,7 @@ impl World {
             wardrobe: super::wardrobe::Wardrobe::default(),
             sickness: super::sickness::Sickness::default(),
             freight: Default::default(),
+            marks: Default::default(),
         };
         world.hearts = super::romance::Hearts::founding(&world);
         for f in 0..world.families.len() {

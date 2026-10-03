@@ -54,6 +54,8 @@ pub fn dispatch(world: &mut World, ev: &WorldEvent) {
     super::wardrobe::on_event(world, ev);
     super::sickness::on_event(world, ev);
     super::freight::on_event(world, ev);
+    super::marks::on_event(world, ev);
+    super::nations::on_event(world, ev);
 }
 
 /// A paper's version of a local event reaches its readers.

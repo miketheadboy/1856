@@ -610,6 +610,38 @@ pub fn resent_hoarders(world: &mut World, hungry_family: FamilyId) {
 /// Word of who bought the store out. The hungry and the hard-up resent it
 /// most; the pious call it sin in a lean winter.
 pub fn on_event(world: &mut World, ev: &super::events::WorldEvent) {
+    // A dear price for something a house can't do without is Dunmore's
+    // gouging, to a house that owes him (`economy`). Nobody blames the river.
+    if let EventKind::PriceMove {
+        good: good @ (Good::Corn | Good::Coffee | Good::Salt | Good::SeedCorn),
+        rising: true,
+        ..
+    } = ev.kind
+        && world.market.goods[good.index()].band >= 1
+        && let Some(keeper) = world
+            .families
+            .iter()
+            .find(|f| f.store)
+            .and_then(|f| world.head_of(f.id))
+    {
+        let owing: Vec<NpcId> = world
+            .families
+            .iter()
+            .filter(|f| !f.store && (f.stores.debt >= 20 || f.stores.hungry_days > 0))
+            .filter_map(|f| world.head_of(f.id))
+            .collect();
+        for h in owing {
+            world.emit_child(
+                ev,
+                EventKind::OpinionChange {
+                    holder: h,
+                    target: keeper,
+                    delta: -4,
+                    after: 0,
+                },
+            );
+        }
+    }
     if let EventKind::Cornered { buyer, .. } = ev.kind {
         let lean = world.day.season() == Season::Winter
             || world.families.iter().any(|f| f.stores.hungry_days > 0);

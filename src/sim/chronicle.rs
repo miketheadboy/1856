@@ -501,6 +501,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 super::reconcile::Peace::Calamity => "trouble did it",
                 super::reconcile::Peace::Brokered => "someone talked them down",
                 super::reconcile::Peace::Marriage => "a wedding made them kin",
+                super::reconcile::Peace::Bee => "they shucked corn side by side",
             }
         ),
         EventKind::WhereWereYou { kin, errand, .. } => format!(
@@ -776,6 +777,32 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             "[WAGON] Missourians stopped {} on the Westport road and took the load (${seized})",
             who(world, teamster)
         ),
+        EventKind::MarkEarned { who: w, mark } => {
+            format!("[MARK] {} {}", who(world, w), mark.label())
+        }
+        EventKind::Remembered {
+            who: w,
+            mark,
+            years,
+        } => {
+            let ago = if years == 1 {
+                "a year".to_string()
+            } else {
+                format!("{years} years")
+            };
+            match mark {
+                super::marks::Mark::HasKilled => {
+                    format!("[MEMORY] The day of the killing, {ago} on: it comes back on {}", who(world, w))
+                }
+                super::marks::Mark::BuriedAChild => {
+                    format!("[MEMORY] The day of the burying, {ago} on: {} grieves again", who(world, w))
+                }
+                _ => format!(
+                    "[MEMORY] The fifty dollars are spent, and {} doesn't sleep",
+                    who(world, w)
+                ),
+            }
+        }
         EventKind::Wake {
             dead,
             came,
@@ -1464,6 +1491,10 @@ pub fn is_notable(world: &World, ev: &WorldEvent, omniscient: bool) -> bool {
         EventKind::Prowler { seen, .. } => omniscient || seen > 0,
         EventKind::ArmsArrived { family, .. } => omniscient || family == 0,
         EventKind::HandTalked { .. } => omniscient,
+        // What a man did in the dark is his own; the county sees the rest.
+        EventKind::MarkEarned { mark, .. } | EventKind::Remembered { mark, .. } => {
+            omniscient || mark.public()
+        }
         EventKind::WagonOut { teamster, .. } | EventKind::WagonBack { teamster, .. } => {
             omniscient || teamster == PLAYER
         }

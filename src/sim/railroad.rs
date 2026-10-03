@@ -263,14 +263,23 @@ pub fn answer_for(world: &mut World, family: FamilyId) -> Answer {
     // or with hungry children, finds his convictions thinner than he thought.
     let stores = &world.families[family as usize].stores;
     let pressed = stores.debt >= super::economy::CREDIT_LIMIT / 2 || stores.hungry_days > 0;
+    // The second fifty dollars is easier than the first.
+    let sold = super::marks::has(world, head, super::marks::Mark::SoldAFugitive);
     if heart > 0.0 {
         if pressed && heart < LUKEWARM {
-            let sell = 0.3 * (1.0 - heart / LUKEWARM) * (1.0 - t.honesty);
+            let sell =
+                0.3 * (1.0 - heart / LUKEWARM) * (1.0 - t.honesty) * if sold { 2.0 } else { 1.0 };
             if world.rng.chance(sell) {
                 return Answer::Betray;
             }
         }
-        let p = 0.15 + 0.6 * heart + 0.2 * t.generosity + 0.1 * t.courage - fear;
+        // Once you've hid someone, the next knock is easier (`marks`).
+        let kept = if super::marks::has(world, head, super::marks::Mark::KeptAStation) {
+            0.2
+        } else {
+            0.0
+        };
+        let p = 0.15 + 0.6 * heart + 0.2 * t.generosity + 0.1 * t.courage + kept - fear;
         if world.rng.chance(p.clamp(0.05, 0.95)) {
             return Answer::Shelter;
         }
@@ -281,7 +290,8 @@ pub fn answer_for(world: &mut World, family: FamilyId) -> Answer {
         + 0.4 * (1.0 - t.honesty)
         + 0.3 * n.hidden.malice
         + 0.3 * -heart
-        + if pressed { 0.2 } else { 0.0 };
+        + if pressed { 0.2 } else { 0.0 }
+        + if sold { 0.25 } else { 0.0 };
     if world.rng.chance(greed.clamp(0.05, 0.9)) {
         Answer::Betray
     } else {

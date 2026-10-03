@@ -310,6 +310,18 @@ fn marry(world: &mut World, ev: &WorldEvent, a: NpcId, b: NpcId) {
             world.hearts.bigamous.push((liar, here, moves, old));
         }
     }
+    // Across the line: marked before the one who moves takes the new side.
+    if world.npc(a).faction != world.npc(b).faction {
+        for who in [a, b] {
+            world.emit_child(
+                ev,
+                EventKind::MarkEarned {
+                    who,
+                    mark: super::marks::Mark::MarriedAcross,
+                },
+            );
+        }
+    }
     world.npc_mut(moves).family = home;
     world.npc_mut(moves).faction = world.families[home as usize].faction;
     world.adjust_opinion(a, b, 30);

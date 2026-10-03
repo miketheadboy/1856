@@ -252,7 +252,13 @@ pub fn candidates(
         let mut motive = 0.0;
         // "Their side does this": judged by what people say out loud.
         let gap = (person.ideology.public - world.npc(victim).ideology.public).abs();
-        motive += 10.0 * gap;
+        // Married across the line: whose side is he on, then? (`marks`)
+        let across = if super::marks::has(world, p, super::marks::Mark::MarriedAcross) {
+            0.5
+        } else {
+            1.0
+        };
+        motive += 10.0 * gap * across;
         if world.feud_between(person.family, victim_family) {
             motive += 20.0;
         }

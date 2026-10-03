@@ -1197,3 +1197,136 @@ fn the_dead_swear_nothing() {
             .all(|br| br.rule != "oath-dead")
     );
 }
+
+#[test]
+fn every_event_belongs_to_a_system() {
+    // `lab matrix` reads the county as a graph of systems; an event nobody
+    // owns is a hole in it.
+    for seed in [3, 15] {
+        let mut w = World::new(seed);
+        w.run_days(730);
+        for e in &w.events {
+            assert_ne!(
+                super::debug::system_of(&e.kind),
+                "?",
+                "{} has no owner",
+                super::debug::kind_name(&e.kind)
+            );
+        }
+    }
+}
+
+#[test]
+fn a_wedding_across_the_line_marks_them_both() {
+    use super::marks::{self, Mark};
+    use super::world::Faction;
+    let mut w = World::new(9);
+    let a = w
+        .living()
+        .find(|n| n.faction == Faction::FreeState && n.age >= 18)
+        .unwrap()
+        .id;
+    let b = w
+        .living()
+        .find(|n| n.faction == Faction::ProSlavery && n.age >= 18 && n.family != 0)
+        .unwrap()
+        .id;
+    w.hearts
+        .couples
+        .retain(|&(x, y)| x != a && y != a && x != b && y != b);
+    w.emit_root(EventKind::Marriage { a, b }, None);
+    w.run_cascades();
+    if super::romance::married_to(&w, a) == Some(b) {
+        assert!(marks::has(&w, a, Mark::MarriedAcross));
+        assert!(marks::has(&w, b, Mark::MarriedAcross));
+        assert!(super::standing::repute(&w, a) < 1.0);
+    }
+}
+
+#[test]
+fn the_river_road_is_safer_for_a_man_who_knows_it() {
+    use super::freight::{Route, stop_odds};
+    use super::marks::Mark;
+    use super::world::Faction;
+    let mut w = World::new(9);
+    let f = wagon_house(&w, Faction::FreeState);
+    let t = w.head_of(f).unwrap();
+    w.market.blockade = true;
+    let before = stop_odds(&w, t, Route::Westport);
+    w.emit_root(
+        EventKind::MarkEarned {
+            who: t,
+            mark: Mark::KnowsTheRiver,
+        },
+        None,
+    );
+    w.run_cascades();
+    assert!((stop_odds(&w, t, Route::Westport) - before * 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn the_convicted_mans_people_turn_on_those_who_swore() {
+    let mut w = World::new(9);
+    let accused = w.head_of(2).unwrap();
+    let kin = w
+        .living()
+        .find(|n| n.family == 2 && n.id != accused)
+        .map(|n| n.id);
+    let witness = w.head_of(3).unwrap();
+    let victim = w.head_of(4).unwrap();
+    let shot = w.emit_root(
+        EventKind::Wounded {
+            victim,
+            attacker: accused,
+        },
+        None,
+    );
+    let today = w.day;
+    w.npc_mut(witness).remember(super::world::MemoryRef {
+        event: shot,
+        believed: Suspect::Person(accused),
+        confidence: 90,
+        source: super::events::Source::Witnessed,
+        day: today,
+        weight: 100,
+    });
+    w.emit_root(
+        EventKind::Tried {
+            accused,
+            judge: victim,
+            convicted: true,
+            days: 10,
+            fine: 0,
+        },
+        Some(shot),
+    );
+    w.run_cascades();
+    if let Some(k) = kin {
+        assert!(w.opinion(k, witness) < 0, "the kin know who swore");
+    }
+    assert!(
+        w.is_scheduled(|e| matches!(*e,
+        EventKind::OpinionChange { holder, target, .. } if holder == accused && target == witness))
+    );
+}
+
+#[test]
+fn a_muster_fight_is_the_cause_of_its_wounds() {
+    for seed in 1..=30 {
+        let mut w = World::new(seed);
+        w.run_days(400);
+        for e in &w.events {
+            if let EventKind::Wounded { .. } = e.kind
+                && let Some(p) = e.parent
+                && matches!(w.events[p as usize].kind, EventKind::Muster { .. })
+            {
+                let EventKind::Muster { wounded, .. } = w.events[p as usize].kind else {
+                    unreachable!()
+                };
+                assert!(wounded >= 1);
+                return;
+            }
+        }
+    }
+    panic!("no muster fight wounded anyone in 30 seeds");
+}
