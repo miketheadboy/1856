@@ -19,9 +19,12 @@
 //! the rest.
 
 use super::calendar::Day;
-use super::events::{EventKind, WorldEvent};
+use super::events::{EventKind, Source, Suspect, WorldEvent};
 use super::market::{self, Good};
 use super::world::{Faction, FamilyId, NpcId, PLAYER, World};
+
+/// Below this `standing::word`, neighbors don't send money along.
+pub const TRUSTED_WORD: f32 = 0.6;
 
 /// Pounds a wagon and one yoke can haul over prairie roads.
 pub const WAGON_POUNDS: f32 = 2000.0;
@@ -99,6 +102,21 @@ pub struct Trip {
 #[derive(Clone, Debug, Default)]
 pub struct Freight {
     pub trips: Vec<Trip>,
+    /// (teamster, day): a neighbor said his order came back light. The
+    /// county remembers it a year (`standing`: "gave short weight").
+    pub shorted: Vec<(NpcId, Day)>,
+}
+
+/// How long a short-weight name sticks.
+pub const SHORT_MEMORY: u32 = 365;
+
+/// Whether the county still says this man gives short weight.
+pub fn short_weight(world: &World, id: NpcId) -> bool {
+    world
+        .freight
+        .shorted
+        .iter()
+        .any(|&(t, d)| t == id && world.day.0 < d.0 + SHORT_MEMORY)
 }
 
 /// On the road (and so not in the county).
@@ -151,6 +169,38 @@ fn fill(route: Route, budget: i32, room: f32) -> (Vec<(Good, f32)>, i32, f32) {
     (bought, spent.ceil() as i32, used)
 }
 
+/// Daily chance, times conviction, that a house hiding a freedom seeker
+/// takes them north itself.
+pub const NORTHBOUND: f32 = 0.3;
+
+/// Dollars per hundredweight a neighbor pays for the haul (Westport to
+/// Lawrence ran a dollar to a dollar and a half the hundred in 1856).
+pub const HAUL_FEE: i32 = 1;
+
+/// Neighbors who'd send money with this teamster: his side, with cash,
+/// who think well of him, if his word is good.
+fn customers(world: &World, family: FamilyId, teamster: NpcId) -> Vec<FamilyId> {
+    if super::standing::word(world, teamster) < TRUSTED_WORD {
+        return Vec::new();
+    }
+    let side = world.npc(teamster).faction;
+    world
+        .families
+        .iter()
+        .filter(|f| f.id != family && !f.store && f.faction == side)
+        .filter(|f| f.stores.cash >= 10)
+        .filter_map(|f| world.head_of(f.id).map(|h| (f.id, h)))
+        .filter(|&(_, h)| world.opinion(h, teamster) >= 15)
+        .map(|(f, _)| f)
+        .collect()
+}
+
+fn orders_waiting(world: &World, family: FamilyId) -> bool {
+    world
+        .head_of(family)
+        .is_some_and(|t| !customers(world, family, t).is_empty())
+}
+
 /// Hitch up and go. The house spends up to `budget` of its cash; neighbors
 /// of its side who think well of the teamster send orders. Returns whether
 /// the wagon left.
@@ -180,15 +230,9 @@ pub fn set_out(world: &mut World, family: FamilyId, route: Route, budget: i32) -
     room -= used;
     load.extend(mine.into_iter().map(|(g, u)| (family, g, u)));
     // "Going to the river: need anything?"
-    let side = world.npc(teamster).faction;
-    let others: Vec<FamilyId> = world
-        .families
-        .iter()
-        .filter(|f| f.id != family && !f.store && f.faction == side && f.stores.cash >= 10)
-        .filter_map(|f| world.head_of(f.id).map(|h| (f.id, h)))
-        .filter(|&(_, h)| world.opinion(h, teamster) >= 15)
-        .map(|(f, _)| f)
-        .collect();
+    // Cash goes with a man whose word is good: a jailbird or a short-weight
+    // man carries his own order and nobody else's (`standing`).
+    let others = customers(world, family, teamster);
     let mut orders = 0u8;
     for f in others {
         if room < 50.0 {
@@ -199,7 +243,11 @@ pub fn set_out(world: &mut World, family: FamilyId, route: Route, budget: i32) -
         if theirs.is_empty() {
             continue;
         }
-        world.families[f as usize].stores.cash -= spent;
+        // A dollar a hundredweight for the haul, to the teamster's house.
+        let fee = ((used / 100.0).ceil() as i32 * HAUL_FEE)
+            .min(world.families[f as usize].stores.cash - spent);
+        world.families[f as usize].stores.cash -= spent + fee.max(0);
+        world.families[family as usize].stores.cash += fee.max(0);
         room -= used;
         orders += 1;
         load.extend(theirs.into_iter().map(|(g, u)| (f, g, u)));
@@ -245,16 +293,51 @@ pub fn daily(world: &mut World) {
         let trip = world.freight.trips.remove(i);
         come_home(world, trip);
     }
-    // Spring and fall, when the roads are fit: households with a yoke and
-    // money in the jar go down to the river.
+    // A house hiding someone, with a yoke and the conviction, doesn't wait
+    // for the season: it hitches up for Iowa (Dr. Doy's wagon left Lawrence
+    // in January 1859). The load is the excuse.
+    let northbound: Vec<FamilyId> = world
+        .railroad
+        .seekers
+        .iter()
+        .filter_map(|s| match s.status {
+            super::railroad::Status::Hidden(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+    for family in northbound {
+        if family == 0 && !world.autopilot_player {
+            continue;
+        }
+        let fam = &world.families[family as usize];
+        let Some(head) = world.head_of(family) else {
+            continue;
+        };
+        if fam.stores.oxen < 2 || fam.faction != Faction::FreeState {
+            continue;
+        }
+        let zeal = world.npc(head).ideology.private;
+        if zeal > 0.3 && world.rng.chance(NORTHBOUND * zeal) {
+            let budget = world.families[family as usize].stores.cash / 2;
+            set_out(world, family, Route::LaneTrail, budget);
+        }
+    }
+    // April to October, when the roads are fit and the boats are running:
+    // households with a yoke and a reason go down to the river.
     let month = today.month();
-    if !matches!(month, 4 | 5 | 9 | 10) {
+    if !(4..=10).contains(&month) {
         return;
     }
     for f in 0..world.families.len() {
         let family = f as FamilyId;
         let hh = &world.families[f].stores;
-        if hh.oxen < 2 || hh.cash < 15 || world.families[f].store {
+        if hh.oxen < 2 || world.families[f].store {
+            continue;
+        }
+        // Money in the jar, hides to sell, or neighbors who'll pay the
+        // haul: any of them puts a wagon on the road.
+        let hides = hh.goods[Good::Hides.index()] >= 3.0;
+        if hh.cash < 15 && !hides && !orders_waiting(world, family) {
             continue;
         }
         if family == 0 && !world.autopilot_player {
@@ -263,15 +346,18 @@ pub fn daily(world: &mut World) {
         let Some(head) = world.head_of(family) else {
             continue;
         };
-        if !world.rng.chance(0.025) {
+        if !world.rng.chance(0.02) {
             continue;
         }
-        // A Free-State man with sense takes the long road in a closed year.
-        let route = if road_closed(world, head, Route::Westport) {
-            Route::LaneTrail
-        } else {
-            Route::Westport
-        };
+        // A Free-State man with sense takes the long road in a closed year;
+        // a careless or a hungry one chances Westport.
+        let careful = world.families[f].stores.prudence;
+        let route =
+            if road_closed(world, head, Route::Westport) && world.rng.chance(0.3 + 0.6 * careful) {
+                Route::LaneTrail
+            } else {
+                Route::Westport
+            };
         let budget = world.families[f].stores.cash / 2;
         set_out(world, family, route, budget);
     }
@@ -336,6 +422,7 @@ fn come_home(world: &mut World, trip: Trip) {
     world.emit_root(
         EventKind::WagonBack {
             teamster,
+            route_west: route == Route::Westport,
             tenths_of_a_ton: (tons * 10.0).round() as u8,
         },
         None,
@@ -349,6 +436,23 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             n.emotions.fear += 25.0;
             n.emotions.anger += 30.0;
             world.add_grievance(Faction::FreeState, 3);
+            // Strangers in the road, masked or near enough. But one of them
+            // sat his horse like that Missouri neighbor he never could
+            // abide: he'd swear to it. The paper will print who he swears to.
+            if let Some(x) = rode_with_them(world, teamster) {
+                let anger = world.npc(teamster).emotions.anger;
+                world.emit_child(
+                    ev,
+                    EventKind::Belief {
+                        holder: teamster,
+                        about: ev.id,
+                        blamed: Suspect::Person(x),
+                        confidence: (40.0 + anger * 0.3).min(80.0) as u8,
+                        source: Source::Victim,
+                        reason: RODE_WITH_THEM,
+                    },
+                );
+            }
         }
         EventKind::WagonBack { teamster, .. } => {
             // The neighbors' goods came through: that's a favor owed.
@@ -369,9 +473,29 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             noticed_by,
         } => {
             world.adjust_opinion(noticed_by, teamster, -15);
+            world.freight.shorted.retain(|&(t, _)| t != teamster);
+            world.freight.shorted.push((teamster, ev.day));
         }
         _ => {}
     }
+}
+
+/// Why a stopped teamster blames a neighbor for the Missourians on the road.
+pub const RODE_WITH_THEM: &str = "he was riding with them, I'd swear it";
+
+/// The man of the other side the teamster can least abide, if he can't
+/// abide any: grown, living, in the county.
+fn rode_with_them(world: &World, teamster: NpcId) -> Option<NpcId> {
+    let side = world.npc(teamster).faction;
+    world
+        .living()
+        .filter(|n| n.faction != side && n.family != 0 && !n.departed)
+        .filter(|n| n.age >= 16 && !super::world::is_woman(&n.name))
+        .filter(|n| !away(world, n.id))
+        .map(|n| (world.opinion(teamster, n.id), n.id))
+        .filter(|&(o, _)| o < 0)
+        .min()
+        .map(|(_, id)| id)
 }
 
 /// Wagons on the road, for the lab and `debug`.

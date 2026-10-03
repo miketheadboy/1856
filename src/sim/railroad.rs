@@ -44,6 +44,8 @@ const FROM: [&str; 6] = [
 
 /// Stations to pass through before reaching free soil to the north.
 const STATIONS_TO_FREEDOM: u8 = 2;
+/// Tiles (half a mile each) the word of a northbound wagon carries.
+const WAGON_WORD: f32 = 10.0;
 /// A reward, in dollars, for word that leads to a capture.
 const REWARD: u16 = 50;
 /// A conviction under the slave code, as a fine the county could collect.
@@ -402,6 +404,43 @@ pub fn guide(world: &mut World, id: u16) -> bool {
 
 pub fn on_event(world: &mut World, ev: &WorldEvent) {
     match ev.kind {
+        // North by the Lane Trail, under the sacks: Iowa is free soil, and
+        // whoever is hid in the teamster's loft rides out with him. Nobody
+        // takes a fugitive down the Westport road into Missouri.
+        EventKind::WagonOut {
+            teamster,
+            route_west: false,
+            ..
+        } => {
+            // Word goes down the line that a wagon's going north: anyone hid
+            // in a house of his side within a morning's walk is brought over
+            // in the night before he hitches up.
+            let family = world.npc(teamster).family;
+            let side = world.npc(teamster).faction;
+            let yard = world.families[family as usize].farm;
+            let aboard: Vec<(u16, FamilyId)> = (0..world.railroad.seekers.len() as u16)
+                .filter_map(|i| match world.railroad.seekers[i as usize].status {
+                    Status::Hidden(f) => Some((i, f)),
+                    _ => None,
+                })
+                .filter(|&(_, f)| {
+                    f == family
+                        || (world.families[f as usize].faction == side
+                            && side == Faction::FreeState
+                            && distance(world.families[f as usize].farm, yard) <= WAGON_WORD)
+                })
+                .collect();
+            for (id, from) in aboard {
+                world.railroad.seekers[id as usize].status = Status::Free;
+                world.railroad.pursuit.retain(|p| p.0 != id);
+                for f in [from, family] {
+                    if !world.railroad.safe.contains(&f) {
+                        world.railroad.safe.push(f);
+                    }
+                }
+                world.emit_child(ev, EventKind::Freedom { seeker: id });
+            }
+        }
         EventKind::SeekerAtDoor { seeker, family } => {
             if family == 0 && !world.autopilot_player && world.player_alive() {
                 world.railroad.at_door = Some(seeker);

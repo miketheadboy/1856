@@ -445,6 +445,9 @@ pub enum EventKind {
     /// Home from the river with the load.
     WagonBack {
         teamster: NpcId,
+        /// From Westport (and the river's cholera), or down the Lane Trail
+        /// (and maybe a crate of rifles).
+        route_west: bool,
         tenths_of_a_ton: u8,
     },
     /// Missourians on the Westport road took a Free-State wagon's load.

@@ -735,10 +735,16 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
         ),
         EventKind::WagonBack {
             teamster,
+            route_west,
             tenths_of_a_ton,
         } => format!(
-            "[WAGON] {} came home from the river with {:.1} ton",
+            "[WAGON] {} came home {} with {:.1} ton",
             who(world, teamster),
+            if route_west {
+                "from the river"
+            } else {
+                "down the Lane Trail"
+            },
             tenths_of_a_ton as f32 / 10.0
         ),
         EventKind::WagonStopped { teamster, seized } => format!(

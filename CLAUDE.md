@@ -79,7 +79,7 @@ Sim modules (`src/sim/`):
 | `hands` | Phase D: kin and hired hands set to the fields, the stock, the timber or the night watch; a watch turns riders back at the fence (neighbors in a feud post one too); hands by the month from hungry households, wages to their people, the unpaid walk and the sour talk (the other side learns where the guns are); partisan companies (Kickapoo Rangers, Buford's, the Stubbs, Lane's) rented to sit on your place or ride on a neighbor's, and the other side's paper printing who paid |
 | `warrant` | Phase D: the justice writes papers on what people swear to (eyes, losses, a neighbor's word; never the paper), slow on his own side; posses and bounty hunters; men come in, run, or fight; trials at Lecompton; you can give yourself up, lie low, light out for the States, meet them at the gate, or take a paper yourself (paid on delivery, half for a body). Violence only: no paper on a freedom seeker |
 | `larder` | what the food is made of: meat as a share of it (butchering, the buffalo, game, Missouri bacon; no meat, less work), garden stores dug in September and eaten through the cold half-year (a cellar keeps them, sugar puts them up; none by late winter is scurvy), milk from a cow in the grass months (children), coffee a pound a week (a fortnight out and tempers fray, until they parch corn), cloth to mend clothes before they're rags; water from a well, the creek (low and foul in a dry August) or hauled by the barrel (a hand's day) |
-| `freight` | the wagon to the river: Westport (three days each way, cheap, and Missourians stop Free-State wagons in a closed year) or the Lane Trail (a month, dearer, safe); a ton to the load by ox team; neighbors of your side send orders; a light-fingered teamster skims them; a man on the road has an alibi and isn't home to be shot |
+| `freight` | the wagon to the river: Westport (three days each way, cheap, and Missourians stop Free-State wagons in a closed year) or the Lane Trail (a month, dearer, safe); a ton to the load by ox team; neighbors of your side send orders; a light-fingered teamster skims them; a man on the road has an alibi and isn't home to be shot; the webs out of the wagon: a free-state house hiding a freedom seeker drives them north up the Lane Trail (and neighbors' guests ride along), the Lane Trail brings the rifle crate the river towns would open, a Westport wagon in a cholera summer brings it home, a stopped teamster swears it was the Missouri neighbor he hates (and the Herald prints it), and a short-weight name sticks a year (`standing`); orders go only with a man whose word is good, at a dollar a hundredweight |
 | `standing` | disparity multipliers. Each position a person holds (woman, widow, child, makes a mark, seen begging, in debt, new to the county, jailbird, hired man, the other side all round, man of property) has a **word** factor (whose testimony carries: gossip, oaths, court, credit, claims, nursing) and a **repute** factor (who gets the benefit of the doubt: blame's "no account" term, how few oaths make a paper, conviction). Products, not sums |
 | `sickness` | ague in the bottoms, cholera up the river, typhoid from a fouled well, the flux, measles, whooping cough, diphtheria, smallpox, typhus from lice, consumption, scurvy, lung fever, wounds gone bad; spread by house, school and neighbor; quinine works, the doctor's calomel and lancet don't; herbs (physic skill), nursing, quarantine, boiling the bedding; a lousy blanket as a dark verb |
 | `wardrobe` | 40 pieces with warmth, skill bonuses, nerve, draw, aim, stealth, charm and side colors; a look per path with a set bonus; colors are what a faceless witness sees; loot from the fallen and from trunks, and taken clothes that their owners' kin recognize |
@@ -118,6 +118,7 @@ cargo run --bin lab --no-default-features -- hands --seeds 10 --days 540
 cargo run --bin lab --no-default-features -- sick --seeds 20 --days 730
 cargo run --bin lab --no-default-features -- dress
 cargo run --release --bin lab --no-default-features -- audit --seeds 30 --days 730
+cargo run --release --bin lab --no-default-features -- webs --seeds 30 --days 730
 cargo run --release --bin lab --no-default-features -- standing --seeds 30 --days 730
 cargo run --release --bin lab --no-default-features -- larder --days 400 --seeds 30
 cargo run --bin headless --no-default-features -- --seed 15 --truth
@@ -163,7 +164,9 @@ libxkbcommon-x11-0` to run it headless for screenshots. Set
    it is a bug. Anything that holds a person (a list of the sick,
    the hired, the jailed, the wanted) handles `Death`/`Perished` the day
    it happens. New cross-system facts get a rule in `audit::check`; run
-   `lab audit` after any change that touches two systems.
+   `lab audit` after any change that touches two systems. A new web (one
+   system's event moving another's books) goes in `lab webs`'s watch list,
+   so a cut wire shows as "never fired".
 8. **Tests live with their module** (`#[cfg(test)] mod tests` at the bottom).
    Cross-system and gate tests live in `src/sim/tests.rs`.
 

@@ -801,6 +801,78 @@ fn wagons(b: &mut Books) {
             );
         }
     }
+    for &(t, _) in &w.freight.shorted {
+        if b.exists("short-weight", t)
+            && !w
+                .events
+                .iter()
+                .any(|e| matches!(e.kind, EventKind::ShortWeight { teamster, .. } if teamster == t))
+        {
+            b.breach(
+                "short-weight-silent",
+                format!("{} called a short-weight man with no ShortWeight", b.who(t)),
+            );
+        }
+    }
+    // The webs out of the wagon: each consequence is today's, and it holds
+    // to its route.
+    for e in w.events.iter().rev().take_while(|e| e.day == w.day) {
+        let Some(cause) = e.parent.or(e.caused_by) else {
+            continue;
+        };
+        let from = &w.events[cause as usize].kind;
+        match (&e.kind, from) {
+            // Nobody carries a fugitive south into Missouri.
+            (
+                EventKind::Freedom { .. },
+                EventKind::WagonOut {
+                    route_west: true, ..
+                },
+            ) => b.breach(
+                "seeker-south",
+                format!("#{} freed by a Westport wagon", e.id),
+            ),
+            (
+                EventKind::FellSick { who, disease },
+                EventKind::WagonBack {
+                    teamster,
+                    route_west,
+                    ..
+                },
+            ) if who != teamster
+                || *disease != super::sickness::Disease::Cholera
+                || !route_west =>
+            {
+                b.breach(
+                    "wagon-sick",
+                    format!("#{} caught off a wagon it shouldn't have", e.id),
+                )
+            }
+            (
+                EventKind::ArmsArrived { family, .. },
+                EventKind::WagonBack {
+                    teamster,
+                    route_west,
+                    ..
+                },
+            ) if *route_west || w.npc(*teamster).family != *family => b.breach(
+                "wagon-rifles",
+                format!("#{} rifles off the wrong wagon", e.id),
+            ),
+            (
+                EventKind::Belief {
+                    holder,
+                    blamed: Suspect::Person(x),
+                    ..
+                },
+                EventKind::WagonStopped { teamster, .. },
+            ) if holder == teamster && w.npc(*x).faction == w.npc(*holder).faction => b.breach(
+                "wagon-blame",
+                format!("#{} a teamster blames his own side for the road", e.id),
+            ),
+            _ => {}
+        }
+    }
     for f in &w.families {
         let l = &f.stores.larder;
         if !(0.0..=1.0).contains(&l.meat_share) {

@@ -286,6 +286,17 @@ pub fn founding(world: &mut World) {
 }
 
 pub(crate) fn catch(world: &mut World, who: NpcId, d: Disease) -> bool {
+    catch_from(world, who, d, None)
+}
+
+/// Caught from something that happened: the onset is that event's child in
+/// the chronicle, so the web shows (a wagon home from the river, cholera).
+pub(crate) fn catch_from(
+    world: &mut World,
+    who: NpcId,
+    d: Disease,
+    cause: Option<super::events::EventId>,
+) -> bool {
     let n = world.npc(who);
     if !n.alive || world.sickness.has(who, d) || world.sickness.immune_to(who, d) {
         return false;
@@ -301,9 +312,12 @@ pub(crate) fn catch(world: &mut World, who: NpcId, d: Disease) -> bool {
         nursed: false,
         doctored: false,
     });
-    world.emit_root(EventKind::FellSick { who, disease: d }, None);
+    world.emit_root(EventKind::FellSick { who, disease: d }, cause);
     true
 }
+
+/// Chance a teamster back from Westport brings the river's cholera home.
+pub const RIVER_CHOLERA: f32 = 0.35;
 
 fn members(world: &World, f: FamilyId) -> Vec<NpcId> {
     world
@@ -817,6 +831,17 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
             let f = world.npc(victim).family;
             if !world.sickness.lousy.contains(&f) {
                 world.sickness.lousy.push(f);
+            }
+        }
+        // The levee in a cholera summer: he slept by the boats, drank the
+        // river, and came home with it. His house takes it from him.
+        EventKind::WagonBack {
+            teamster,
+            route_west: true,
+            ..
+        } if world.sickness.cholera_until.is_some() => {
+            if world.rng.chance(RIVER_CHOLERA) {
+                catch_from(world, teamster, Disease::Cholera, Some(ev.id));
             }
         }
         // A wound gone bad: dirt in it, no clean cloth, and a hot week.

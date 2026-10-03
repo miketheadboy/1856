@@ -511,6 +511,8 @@ fn print_local(world: &mut World, paper: Paper) {
                     spread_from: None, ..
                 } => 3,
                 EventKind::Cruelty { .. } => 2,
+                // The Missouri road: the Herald's standing grievance.
+                EventKind::WagonStopped { .. } => 2,
                 EventKind::Theft { .. } => 1,
                 _ => return None,
             };

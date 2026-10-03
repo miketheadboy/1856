@@ -91,6 +91,9 @@ pub fn parts(world: &World, id: NpcId) -> Vec<Position> {
     if world.warrants.record.contains(&id) {
         out.push(pos("a jailbird", 0.6, 0.55));
     }
+    if super::freight::short_weight(world, id) {
+        out.push(pos("gave short weight", 0.8, 0.85));
+    }
     if world.hands.hired.iter().any(|h| h.npc == id) {
         out.push(pos("a hired man", 0.85, 0.85));
     }

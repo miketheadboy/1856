@@ -36,6 +36,8 @@
 //!                            standing is wrongly blamed, papered, convicted, jumped
 //!   audit                    every system's books against the others', every day,
 //!                            over --seeds: breaches by rule with a first example
+//!   webs                     which events cause which, over --seeds: every cause ->
+//!                            effect pair the bus carried, and the links that never fired
 //!   metrics <file.csv>       daily metrics for charts
 //!   trace <file.tsv>         every event with its cascade links
 //!   time                     how long a simulated year takes
@@ -128,6 +130,7 @@ fn main() {
         "audit" => audit_lens(&o),
         "standing" => standing_lens(&o),
         "larder" => larder_lens(&o),
+        "webs" => webs_lens(&o),
         _ => println!(
             "{}",
             include_str!("lab.rs")
@@ -193,6 +196,59 @@ fn law_lens(o: &Opts) {
 }
 
 /// The county's tables on one day, then the river trade across seeds.
+/// The bus as a graph: for every event with a parent or a cause, the pair
+/// (cause kind -> effect kind), tallied over seeds. A web that should hold
+/// and shows zero is a wire cut somewhere.
+fn webs_lens(o: &Opts) {
+    use std::collections::BTreeMap;
+    let name = |k: &EventKind| {
+        let s = format!("{k:?}");
+        s.split([' ', '{', '(']).next().unwrap_or("").to_string()
+    };
+    let mut pairs: BTreeMap<(String, String), u32> = BTreeMap::new();
+    for seed in 1..=o.seeds {
+        let mut w = World::new(seed);
+        w.run_days(o.days);
+        for e in &w.events {
+            if let Some(c) = e.parent.or(e.caused_by) {
+                let from = name(&w.events[c as usize].kind);
+                *pairs.entry((from, name(&e.kind))).or_default() += 1;
+            }
+        }
+    }
+    let n = o.seeds as f32;
+    let mut rows: Vec<_> = pairs.iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(a.1));
+    println!(
+        "{} cause -> effect pairs over {} seeds x {} days (per seed):",
+        rows.len(),
+        o.seeds,
+        o.days
+    );
+    for ((from, to), c) in &rows {
+        println!("  {:>9.2}  {from} -> {to}", **c as f32 / n);
+    }
+    // The webs this lens was built to watch. (WagonStopped -> Headline is
+    // rare by history: the blockade summer is the summer the Free-State
+    // presses were in the river. WagonBack -> FellSick, cholera off the
+    // levee, needs a cholera summer and a wagon in it: ~1 seed in 50.)
+    let expect = [
+        ("WagonOut", "Freedom"),
+        ("WagonBack", "ArmsArrived"),
+        ("WagonStopped", "Belief"),
+    ];
+    let cut: Vec<_> = expect
+        .iter()
+        .filter(|(a, b)| !pairs.contains_key(&(a.to_string(), b.to_string())))
+        .collect();
+    if cut.is_empty() {
+        println!("\nevery watched web fired");
+    } else {
+        println!("\nnever fired: {cut:?}");
+        std::process::exit(1);
+    }
+}
+
 fn larder_lens(o: &Opts) {
     use bleeding_kansas::sim::{freight, larder};
     let mut w = World::new(o.seed);

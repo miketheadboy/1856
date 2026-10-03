@@ -238,6 +238,10 @@ pub fn hide(world: &mut World, family: FamilyId, place: Hide) {
     a.told = false;
 }
 
+/// Chance the Emigrant Aid men at Tabor send a rifle home in a Free-State
+/// wagon on the Lane Trail in 1856.
+pub const LANE_RIFLE: f32 = 0.4;
+
 /// Send east for rifles. They come in on a Wednesday two or three weeks on,
 /// if the river's open.
 pub fn order(world: &mut World, family: FamilyId, rifles: u8) -> bool {
@@ -430,6 +434,31 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
         }
         EventKind::Intercepted { .. } => {
             world.add_grievance(Faction::FreeState, 3);
+        }
+        // Down the Lane Trail the river towns can't open the crates: a box
+        // on order rides home under the sacks, and in the hard year the
+        // Company's men at Tabor put another in the wagon bed.
+        EventKind::WagonBack {
+            teamster,
+            route_west: false,
+            ..
+        } => {
+            let family = world.npc(teamster).family;
+            let fam = &world.families[family as usize];
+            let ordered = fam.stores.arms.on_order.map_or(0, |(_, r)| r);
+            let (y, m, _) = world.day.date();
+            let company = fam.faction == Faction::FreeState
+                && y == 1856
+                && m <= 10
+                && world.rng.chance(LANE_RIFLE);
+            let rifles = ordered + company as u8;
+            if rifles > 0 {
+                let a = &mut world.families[family as usize].stores.arms;
+                a.on_order = None;
+                a.rifles += rifles;
+                a.cartridges += 25 * rifles as u16;
+                world.emit_child(ev, EventKind::ArmsArrived { family, rifles });
+            }
         }
         _ => {}
     }

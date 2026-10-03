@@ -46,6 +46,7 @@ pub fn victim_of(world: &World, event: EventId) -> Option<NpcId> {
         EventKind::Death { victim, .. } => Some(victim),
         EventKind::Theft { victim, .. } => Some(victim),
         EventKind::Strayed { owner } => Some(owner),
+        EventKind::WagonStopped { teamster, .. } => Some(teamster),
         EventKind::Captured { at: Some(f), .. } => world.head_of(f),
         EventKind::Wounded { victim, .. } => Some(victim),
         EventKind::ShotAt { target, .. } => Some(target),

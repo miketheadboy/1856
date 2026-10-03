@@ -771,3 +771,205 @@ fn when_both_are_bigamists_one_letter_undoes_it() {
     assert!(w.hearts.bigamous.is_empty());
     assert!(super::audit::check(&w).is_empty());
 }
+
+// Webs: one system's event moving another's books, through the bus.
+
+fn wagon_house(w: &World, side: super::world::Faction) -> u32 {
+    (1..w.families.len() as u32)
+        .find(|&f| {
+            let fam = &w.families[f as usize];
+            fam.faction == side && fam.farms() && w.head_of(f).is_some()
+        })
+        .unwrap()
+}
+
+fn parent_kind(w: &World, e: &super::events::WorldEvent) -> Option<EventKind> {
+    e.parent
+        .or(e.caused_by)
+        .map(|p| w.events[p as usize].kind.clone())
+}
+
+#[test]
+fn a_seeker_hid_in_the_loft_rides_north_in_the_wagon() {
+    use super::freight::{self, Route};
+    use super::railroad::{Seeker, Status};
+    use super::world::Faction;
+    for (route, freed) in [(Route::LaneTrail, true), (Route::Westport, false)] {
+        let mut w = World::new(9);
+        let f = wagon_house(&w, Faction::FreeState);
+        w.families[f as usize].stores.oxen = 2;
+        w.families[f as usize].stores.cash = 40;
+        w.railroad.seekers.push(Seeker {
+            name: "Sam",
+            from: "Platte County",
+            arrived: w.day,
+            status: Status::Hidden(f),
+            passed: 0,
+            wary: 0.5,
+            tried: Vec::new(),
+            noticed_by: Vec::new(),
+        });
+        w.railroad
+            .pursuit
+            .push((0, super::calendar::Day(w.day.0 + 2), 3));
+        assert!(freight::set_out(&mut w, f, route, 40));
+        w.run_cascades();
+        assert_eq!(w.railroad.seekers[0].status == Status::Free, freed);
+        let rode = w.events.iter().any(|e| {
+            matches!(e.kind, EventKind::Freedom { seeker: 0 })
+                && matches!(parent_kind(&w, e), Some(EventKind::WagonOut { .. }))
+        });
+        assert_eq!(rode, freed, "{route:?}");
+        assert_eq!(w.railroad.pursuit.is_empty(), freed);
+    }
+}
+
+#[test]
+fn the_river_sends_cholera_home_with_the_wagon() {
+    use super::sickness::Disease;
+    let mut w = World::new(9);
+    let men: Vec<NpcId> = (1..w.families.len() as u32)
+        .filter_map(|f| w.head_of(f))
+        .collect();
+    // Not in a clean summer.
+    for &t in &men {
+        w.emit_root(
+            EventKind::WagonBack {
+                teamster: t,
+                route_west: true,
+                tenths_of_a_ton: 5,
+            },
+            None,
+        );
+    }
+    w.run_cascades();
+    assert!(
+        w.sickness
+            .cases
+            .iter()
+            .all(|c| c.disease != Disease::Cholera)
+    );
+    w.sickness.cholera_until = Some(super::calendar::Day(w.day.0 + 30));
+    for &t in men.iter().cycle().take(men.len() * 4) {
+        w.emit_root(
+            EventKind::WagonBack {
+                teamster: t,
+                route_west: true,
+                tenths_of_a_ton: 5,
+            },
+            None,
+        );
+    }
+    w.run_cascades();
+    let caught: Vec<_> = w
+        .events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.kind,
+                EventKind::FellSick {
+                    disease: Disease::Cholera,
+                    ..
+                }
+            )
+        })
+        .collect();
+    assert!(!caught.is_empty(), "nobody of {} caught it", men.len());
+    assert!(caught.iter().all(|e| matches!(
+        parent_kind(&w, e),
+        Some(EventKind::WagonBack {
+            route_west: true,
+            ..
+        })
+    )));
+    assert!(super::audit::check(&w).is_empty());
+}
+
+#[test]
+fn the_lane_trail_brings_the_crate_the_river_towns_would_open() {
+    use super::world::Faction;
+    let mut w = World::new(9);
+    let f = wagon_house(&w, Faction::FreeState);
+    let t = w.head_of(f).unwrap();
+    w.market.blockade = true;
+    w.families[f as usize].stores.arms.on_order = Some((super::calendar::Day(w.day.0 + 30), 2));
+    let before = w.families[f as usize].stores.arms.rifles;
+    w.emit_root(
+        EventKind::WagonBack {
+            teamster: t,
+            route_west: false,
+            tenths_of_a_ton: 5,
+        },
+        None,
+    );
+    w.run_cascades();
+    let a = &w.families[f as usize].stores.arms;
+    assert!(a.on_order.is_none());
+    assert!(a.rifles >= before + 2);
+    assert!(
+        w.events
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::ArmsArrived { family, .. } if family == f))
+    );
+}
+
+#[test]
+fn a_stopped_teamster_swears_it_was_the_neighbor_he_hates() {
+    use super::world::Faction;
+    let mut w = World::new(9);
+    let f = wagon_house(&w, Faction::FreeState);
+    let t = w.head_of(f).unwrap();
+    let enemy = w
+        .living()
+        .find(|n| {
+            n.faction == Faction::ProSlavery
+                && n.family != 0
+                && n.age >= 16
+                && !super::world::is_woman(&n.name)
+        })
+        .unwrap()
+        .id;
+    w.adjust_opinion(t, enemy, -90);
+    let before: Vec<i16> = (0..w.npcs.len() as NpcId)
+        .map(|x| w.opinion(t, x))
+        .collect();
+    let stop = w.emit_root(
+        EventKind::WagonStopped {
+            teamster: t,
+            seized: 30,
+        },
+        None,
+    );
+    w.run_cascades();
+    let m = w.npc(t).memory_of(stop).expect("he remembers the road");
+    assert_eq!(m.believed, Suspect::Person(enemy));
+    assert!(before[enemy as usize] < 0);
+    assert_eq!(attribution::victim_of(&w, stop), Some(t));
+}
+
+#[test]
+fn short_weight_sticks_to_a_name() {
+    use super::world::Faction;
+    let mut w = World::new(9);
+    let f = wagon_house(&w, Faction::ProSlavery);
+    let t = w.head_of(f).unwrap();
+    let n = w.head_of(wagon_house(&w, Faction::FreeState)).unwrap();
+    let word = super::standing::word(&w, t);
+    w.emit_root(
+        EventKind::ShortWeight {
+            teamster: t,
+            noticed_by: n,
+        },
+        None,
+    );
+    w.run_cascades();
+    assert!(super::freight::short_weight(&w, t));
+    assert!(super::standing::word(&w, t) < word);
+    assert!(
+        super::standing::parts(&w, t)
+            .iter()
+            .any(|p| p.name == "gave short weight")
+    );
+    w.day = super::calendar::Day(w.day.0 + super::freight::SHORT_MEMORY);
+    assert!(!super::freight::short_weight(&w, t));
+}
