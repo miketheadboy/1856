@@ -536,6 +536,7 @@ fn belief_system(world: &mut World, ev: &WorldEvent) {
     let is_theft = matches!(about_kind, EventKind::Theft { .. });
     let is_wound = matches!(about_kind, EventKind::Wounded { .. });
     let is_cruelty = matches!(about_kind, EventKind::Cruelty { .. });
+    let is_fever = matches!(about_kind, EventKind::FellSick { .. });
     let stake = if is_stakeholder(world, holder, victim) {
         1.0
     } else {
@@ -578,6 +579,9 @@ fn belief_system(world: &mut World, ev: &WorldEvent) {
             35.0
         } else if is_theft {
             30.0
+        } else if is_fever {
+            // A suspicion about a fever: it sours, it doesn't inflame.
+            20.0
         } else {
             45.0
         };

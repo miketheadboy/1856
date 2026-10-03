@@ -34,6 +34,30 @@ pub fn suspect_label(world: &World, s: Suspect) -> String {
     }
 }
 
+/// What "nature" means depends on what happened: lightning for a barn,
+/// wolves for a cow, the water for a fever (the auditor of prose caught the
+/// county blaming lightning for typhoid).
+pub fn blame_label(world: &World, s: Suspect, about: EventId) -> String {
+    if s != Suspect::Nature {
+        return suspect_label(world, s);
+    }
+    match world.events[about as usize].kind {
+        EventKind::FellSick { .. } => "the water".into(),
+        EventKind::Strayed { .. }
+        | EventKind::Theft { .. }
+        | EventKind::Cruelty {
+            act: Cruelty::KillStock,
+            ..
+        } => "wolves".into(),
+        EventKind::Cruelty {
+            act: Cruelty::SpoilHay,
+            ..
+        } => "the weather".into(),
+        EventKind::Death { .. } => "the fever".into(),
+        _ => suspect_label(world, s),
+    }
+}
+
 fn cause_label(world: &World, cause: FireCause) -> String {
     match cause {
         FireCause::Lightning => "lightning".into(),
@@ -135,7 +159,7 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
                 if stray {
                     "nobody".to_string()
                 } else {
-                    suspect_label(world, blamed)
+                    blame_label(world, blamed, about)
                 },
                 confidence,
                 reason
@@ -157,12 +181,13 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
             teller,
             listener,
             blamed,
+            about,
             ..
         } => format!(
             "[GOSSIP] {} tells {} it was {}",
             who(world, teller),
             who(world, listener),
-            suspect_label(world, blamed)
+            blame_label(world, blamed, about)
         ),
         EventKind::FactionGrievance {
             faction,
@@ -750,6 +775,19 @@ pub fn debug_line(world: &World, ev: &WorldEvent, omniscient: bool) -> String {
         EventKind::WagonStopped { teamster, seized } => format!(
             "[WAGON] Missourians stopped {} on the Westport road and took the load (${seized})",
             who(world, teamster)
+        ),
+        EventKind::Wake {
+            dead,
+            came,
+            stayed_away,
+        } => format!(
+            "[BURYING] {came} sat up with {}{}",
+            who(world, dead),
+            if stayed_away > 0 {
+                format!("; {stayed_away} who should have come kept away for fear of it")
+            } else {
+                String::new()
+            }
         ),
         EventKind::ShortWeight {
             teamster,

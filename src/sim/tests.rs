@@ -973,3 +973,227 @@ fn short_weight_sticks_to_a_name() {
     w.day = super::calendar::Day(w.day.0 + super::freight::SHORT_MEMORY);
     assert!(!super::freight::short_weight(&w, t));
 }
+
+#[test]
+fn friends_who_sit_up_with_the_dead_catch_it() {
+    use super::events::Hardship;
+    use super::sickness::{self, Disease};
+    let mut w = World::new(9);
+    let dead = w.head_of(3).unwrap();
+    let home = w.families[3].farm;
+    let friends: Vec<NpcId> = w
+        .living()
+        .filter(|n| n.family != 3 && n.age >= 16 && !n.departed)
+        .filter(|n| super::world::distance(w.farm_of(n.id), home) <= 10.0)
+        .map(|n| n.id)
+        .collect();
+    assert!(friends.len() >= 2);
+    for &f in &friends {
+        w.adjust_opinion(f, dead, 80);
+    }
+    // One careful house keeps away.
+    let careful = w.npc(friends[0]).family;
+    w.sickness.quarantine.push(careful);
+    let mourner = w.head_of(3);
+    let before = mourner.map(|m| w.opinion(m, friends[0]));
+    w.npc_mut(dead).alive = false;
+    w.emit_root(
+        EventKind::Perished {
+            victim: dead,
+            cause: Hardship::Sickness(Disease::Smallpox),
+        },
+        None,
+    );
+    w.run_cascades();
+    let wake = w
+        .events
+        .iter()
+        .find(|e| matches!(e.kind, EventKind::Wake { .. }))
+        .expect("a burying");
+    let EventKind::Wake {
+        came, stayed_away, ..
+    } = wake.kind
+    else {
+        unreachable!()
+    };
+    assert!(came >= 1 && stayed_away >= 1);
+    if let (Some(m), Some(b)) = (mourner, before)
+        && m != friends[0]
+        && w.npc(m).alive
+    {
+        assert!(
+            w.opinion(m, friends[0]) < b,
+            "the bereaved remember who kept away"
+        );
+    }
+    // Nobody from the careful house caught it at the wake.
+    assert!(
+        w.sickness
+            .cases
+            .iter()
+            .all(|c| w.npc(c.who).family != careful)
+    );
+    assert!(sickness::wake_risk(Disease::Smallpox) > 0.0);
+    assert_eq!(sickness::wake_risk(Disease::Scurvy), 0.0);
+}
+
+#[test]
+fn a_fever_in_the_house_finds_a_poisoner() {
+    use super::sickness::Disease;
+    let mut w = World::new(9);
+    let f = 2u32;
+    let who = w.head_of(f).unwrap();
+    let id = w.emit_root(
+        EventKind::FellSick {
+            who,
+            disease: Disease::Typhoid,
+        },
+        None,
+    );
+    w.run_cascades();
+    let belief = w.events.iter().find(|e| {
+        matches!(e.kind, EventKind::Belief { about, .. } if about == id) && e.parent == Some(id)
+    });
+    let Some(b) = belief else {
+        panic!("the house wants a cause")
+    };
+    let EventKind::Belief { holder, .. } = b.kind else {
+        unreachable!()
+    };
+    assert_eq!(w.npc(holder).family, f);
+    // The second case in the house doesn't start a new hunt.
+    let n = w.events.len();
+    w.emit_root(
+        EventKind::FellSick {
+            who,
+            disease: Disease::Cholera,
+        },
+        None,
+    );
+    w.run_cascades();
+    assert!(
+        !w.events[n..]
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::Belief { .. }) && e.parent == Some(n as u32))
+    );
+    // Measles is God's will, not a neighbor's.
+    assert!(!super::sickness::suspected(Disease::Measles));
+}
+
+#[test]
+fn a_bank_note_in_the_mail_looks_like_blood_money() {
+    use super::mail::Letter;
+    let mut w = World::new(9);
+    let f = 4u32;
+    w.emit_root(
+        EventKind::Letter {
+            family: f,
+            letter: Letter::Money(15),
+            reader: None,
+        },
+        None,
+    );
+    w.run_cascades();
+    assert!(attribution::came_into_money(&w, w.day).contains(&f));
+    let harbor = (1..w.families.len() as u32)
+        .find(|&h| h != f && w.head_of(h).is_some())
+        .unwrap();
+    let cap = w.emit_root(
+        EventKind::Captured {
+            seeker: 0,
+            at: Some(harbor),
+            informer: None,
+        },
+        None,
+    );
+    let observer = w.head_of(harbor).unwrap();
+    let suspect = w.head_of(f).unwrap();
+    let cands = attribution::candidates(&w, observer, cap, None);
+    let c = cands
+        .iter()
+        .find(|c| c.suspect == Suspect::Person(suspect))
+        .unwrap();
+    assert!(
+        c.parts
+            .iter()
+            .any(|&(k, v)| k == "money" && v == attribution::FLUSH)
+    );
+    // A fortnight on, the money is spent and forgotten.
+    w.day = super::calendar::Day(w.day.0 + 20);
+    assert!(!attribution::came_into_money(&w, w.day).contains(&f));
+}
+
+#[test]
+fn debt_thins_a_free_state_conscience() {
+    use super::railroad::{Answer, answer_for};
+    use super::world::Faction;
+    let sold = |pressed: bool| {
+        let mut n = 0;
+        for seed in 0..200 {
+            let mut w = World::new(seed);
+            let f = wagon_house(&w, Faction::FreeState);
+            let h = w.head_of(f).unwrap();
+            w.npc_mut(h).ideology.private = 0.1;
+            w.npc_mut(h).temperament.honesty = 0.2;
+            if pressed {
+                w.families[f as usize].stores.debt = super::economy::CREDIT_LIMIT;
+            }
+            if answer_for(&mut w, f) == Answer::Betray {
+                n += 1;
+            }
+        }
+        n
+    };
+    let (easy, owing) = (sold(false), sold(true));
+    assert_eq!(easy, 0, "a free-state man out of debt doesn't sell");
+    assert!(owing >= 10, "owing Dunmore, {owing}/200 sold");
+}
+
+#[test]
+fn the_dead_swear_nothing() {
+    // Silas Ashby, seed 9: shot the same tick he watched his wife killed,
+    // his witness belief landed after his death and swore an oath.
+    let mut w = World::new(9);
+    let (a, b, c) = (
+        w.head_of(2).unwrap(),
+        w.head_of(3).unwrap(),
+        w.head_of(4).unwrap(),
+    );
+    let kin = w
+        .living()
+        .find(|n| n.family == 2 && n.id != a)
+        .map(|n| n.id)
+        .unwrap();
+    let wife = w.emit_root(
+        EventKind::Death {
+            victim: kin,
+            killer: Some(b),
+        },
+        None,
+    );
+    w.emit_root(
+        EventKind::Death {
+            victim: a,
+            killer: Some(c),
+        },
+        None,
+    );
+    w.emit_root(
+        EventKind::Belief {
+            holder: a,
+            about: wife,
+            blamed: Suspect::Person(b),
+            confidence: 100,
+            source: super::events::Source::Witnessed,
+            reason: "saw it with their own eyes",
+        },
+        None,
+    );
+    w.run_cascades();
+    assert!(w.ghosts.oaths.iter().all(|o| o.holder != a));
+    assert!(
+        super::audit::check(&w)
+            .iter()
+            .all(|br| br.rule != "oath-dead")
+    );
+}

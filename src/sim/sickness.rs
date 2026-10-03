@@ -25,7 +25,7 @@ use super::calendar::{Day, Season};
 use super::events::{Cruelty, EventKind, Hardship, WorldEvent};
 use super::homestead::{self, Improvement};
 use super::psyche::LifeStage;
-use super::world::{FamilyId, NpcId, PLAYER, World};
+use super::world::{FamilyId, NpcId, PLAYER, World, distance};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Disease {
@@ -833,6 +833,36 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
                 world.sickness.lousy.push(f);
             }
         }
+        // The first case of a bowel fever in a house: the head wants a cause,
+        // and gets one from the same engine that reads a burned barn.
+        EventKind::FellSick { who, disease } if suspected(disease) => {
+            let fam = world.npc(who).family;
+            let since = world.day.0.saturating_sub(30);
+            let first = !world
+                .events
+                .iter()
+                .rev()
+                .take_while(|e| e.day.0 >= since)
+                .any(|e| {
+                    e.id != ev.id
+                        && matches!(e.kind, EventKind::FellSick { who: w, disease: x }
+                        if suspected(x) && world.npc(w).family == fam)
+                });
+            if first && let Some(head) = world.head_of(fam) {
+                let v = super::attribution::judge(world, head, ev.id, None);
+                world.emit_child(
+                    ev,
+                    EventKind::Belief {
+                        holder: head,
+                        about: ev.id,
+                        blamed: v.blamed,
+                        confidence: v.confidence,
+                        source: super::events::Source::Victim,
+                        reason: v.reason,
+                    },
+                );
+            }
+        }
         // The levee in a cholera summer: he slept by the boats, drank the
         // river, and came home with it. His house takes it from him.
         EventKind::WagonBack {
@@ -854,8 +884,9 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
         }
         EventKind::Perished {
             victim,
-            cause: Hardship::Sickness(_),
+            cause: Hardship::Sickness(d),
         } => {
+            wake(world, ev, victim, d);
             // Burying one of their own frightens a family into keeping the
             // children home, if they're the careful kind.
             let f = world.npc(victim).family;
@@ -868,6 +899,80 @@ pub fn on_event(world: &mut World, ev: &WorldEvent) {
         }
         _ => {}
     }
+}
+
+/// Whether sitting up with one dead of it can give it to you: the catching
+/// fevers, and cholera from washing the body.
+pub fn wake_risk(d: Disease) -> f32 {
+    match d {
+        Disease::Cholera => 0.12,
+        _ => (d.contagion() * 2.5).min(0.3),
+    }
+}
+
+/// The burying. Friends of the dead within a morning's ride come and sit up
+/// with the body: the ones who loved them most are the ones who catch it.
+/// A careful house that keeps its children home keeps itself home too, and
+/// the bereaved remember who didn't come.
+fn wake(world: &mut World, ev: &WorldEvent, dead: NpcId, d: Disease) {
+    let fam = world.npc(dead).family;
+    let home = world.families[fam as usize].farm;
+    let mourner = world.head_of(fam);
+    let friends: Vec<NpcId> = world
+        .living()
+        .filter(|n| n.family != fam && !n.departed)
+        .filter(|n| LifeStage::of(n.age) != LifeStage::Child)
+        .filter(|n| distance(world.farm_of(n.id), home) <= WAKE_RIDE)
+        .filter(|n| world.opinion(n.id, dead) >= WAKE_FRIEND)
+        .map(|n| n.id)
+        .collect();
+    if friends.is_empty() {
+        return;
+    }
+    let (mut came, mut away) = (Vec::new(), Vec::new());
+    for f in friends {
+        let f_fam = world.npc(f).family;
+        if world.sickness.quarantine.contains(&f_fam) {
+            away.push(f);
+        } else {
+            came.push(f);
+        }
+    }
+    let Some(wake) = world.emit_child(
+        ev,
+        EventKind::Wake {
+            dead,
+            came: came.len().min(255) as u8,
+            stayed_away: away.len().min(255) as u8,
+        },
+    ) else {
+        return;
+    };
+    let p = wake_risk(d);
+    for f in came {
+        if let Some(m) = mourner {
+            world.adjust_opinion(m, f, 3);
+        }
+        if p > 0.0 && world.rng.chance(p) {
+            catch_from(world, f, d, Some(wake));
+        }
+    }
+    if let Some(m) = mourner {
+        for f in away {
+            world.adjust_opinion(m, f, -8);
+        }
+    }
+}
+
+/// Tiles (half a mile) a friend rides to sit up with the dead.
+const WAKE_RIDE: f32 = 10.0;
+/// How well you have to think of the dead to come.
+const WAKE_FRIEND: i16 = 20;
+
+/// Fevers of the bowels with no cause anyone can see: a house reaches for
+/// one, and in 1850s Kansas the one to hand was a neighbor at the well.
+pub fn suspected(d: Disease) -> bool {
+    matches!(d, Disease::Typhoid | Disease::Cholera)
 }
 
 /// Counts for the lab and the survey.

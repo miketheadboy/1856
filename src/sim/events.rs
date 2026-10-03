@@ -455,6 +455,14 @@ pub enum EventKind {
         teamster: NpcId,
         seized: u16,
     },
+    /// The burying of one dead of a catching sickness: friends sat up with
+    /// the body and some carried it home (`sickness`). Friends who kept away
+    /// for fear of it are remembered for keeping away.
+    Wake {
+        dead: NpcId,
+        came: u8,
+        stayed_away: u8,
+    },
     /// A neighbor's order came back light: the teamster kept some.
     ShortWeight {
         teamster: NpcId,

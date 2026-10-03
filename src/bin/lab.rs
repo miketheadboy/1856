@@ -206,10 +206,32 @@ fn webs_lens(o: &Opts) {
         s.split([' ', '{', '(']).next().unwrap_or("").to_string()
     };
     let mut pairs: BTreeMap<(String, String), u32> = BTreeMap::new();
+    // Links that are decisions, not events: tallied by their marks.
+    let (mut flush_blamed, mut flush_right, mut sold) = (0u32, 0u32, 0u32);
     for seed in 1..=o.seeds {
         let mut w = World::new(seed);
         w.run_days(o.days);
         for e in &w.events {
+            if let EventKind::Belief {
+                about,
+                blamed: bleeding_kansas::sim::Suspect::Person(x),
+                reason: "came into money all of a sudden",
+                ..
+            } = e.kind
+            {
+                flush_blamed += 1;
+                if matches!(w.events[about as usize].kind, EventKind::Captured { informer: Some(i), .. } if i == x)
+                {
+                    flush_right += 1;
+                }
+            }
+            if let EventKind::Captured {
+                informer: Some(i), ..
+            } = e.kind
+                && w.npc(i).faction == bleeding_kansas::sim::Faction::FreeState
+            {
+                sold += 1;
+            }
             if let Some(c) = e.parent.or(e.caused_by) {
                 let from = name(&w.events[c as usize].kind);
                 *pairs.entry((from, name(&e.kind))).or_default() += 1;
@@ -228,6 +250,13 @@ fn webs_lens(o: &Opts) {
     for ((from, to), c) in &rows {
         println!("  {:>9.2}  {from} -> {to}", **c as f32 / n);
     }
+    println!(
+        "\ncaptures blamed on whoever came into money: {:.2}/seed ({} of {} on the real informer); free-state men who sold a fugitive: {:.2}/seed",
+        flush_blamed as f32 / n,
+        flush_right,
+        flush_blamed,
+        sold as f32 / n
+    );
     // The webs this lens was built to watch. (WagonStopped -> Headline is
     // rare by history: the blockade summer is the summer the Free-State
     // presses were in the river. WagonBack -> FellSick, cholera off the
@@ -236,6 +265,9 @@ fn webs_lens(o: &Opts) {
         ("WagonOut", "Freedom"),
         ("WagonBack", "ArmsArrived"),
         ("WagonStopped", "Belief"),
+        ("Perished", "Wake"),
+        ("Wake", "FellSick"),
+        ("FellSick", "Belief"),
     ];
     let cut: Vec<_> = expect
         .iter()

@@ -44,6 +44,8 @@ const FROM: [&str; 6] = [
 
 /// Stations to pass through before reaching free soil to the north.
 const STATIONS_TO_FREEDOM: u8 = 2;
+/// Below this private conviction, a Free-State heart can be bought by debt.
+const LUKEWARM: f32 = 0.3;
 /// Tiles (half a mile each) the word of a northbound wagon carries.
 const WAGON_WORD: f32 = 10.0;
 /// A reward, in dollars, for word that leads to a capture.
@@ -257,7 +259,17 @@ pub fn answer_for(world: &mut World, family: FamilyId) -> Answer {
     let heart = n.ideology.private;
     let t = n.temperament;
     let fear = n.emotions.fear / 200.0;
+    // Fifty dollars is most of a year's debt at Dunmore's. A man owing it,
+    // or with hungry children, finds his convictions thinner than he thought.
+    let stores = &world.families[family as usize].stores;
+    let pressed = stores.debt >= super::economy::CREDIT_LIMIT / 2 || stores.hungry_days > 0;
     if heart > 0.0 {
+        if pressed && heart < LUKEWARM {
+            let sell = 0.3 * (1.0 - heart / LUKEWARM) * (1.0 - t.honesty);
+            if world.rng.chance(sell) {
+                return Answer::Betray;
+            }
+        }
         let p = 0.15 + 0.6 * heart + 0.2 * t.generosity + 0.1 * t.courage - fear;
         if world.rng.chance(p.clamp(0.05, 0.95)) {
             return Answer::Shelter;
@@ -265,7 +277,11 @@ pub fn answer_for(world: &mut World, family: FamilyId) -> Answer {
         return Answer::TurnAway;
     }
     // The reward is fifty dollars.
-    let greed = 0.2 + 0.4 * (1.0 - t.honesty) + 0.3 * n.hidden.malice + 0.3 * -heart;
+    let greed = 0.2
+        + 0.4 * (1.0 - t.honesty)
+        + 0.3 * n.hidden.malice
+        + 0.3 * -heart
+        + if pressed { 0.2 } else { 0.0 };
     if world.rng.chance(greed.clamp(0.05, 0.9)) {
         Answer::Betray
     } else {

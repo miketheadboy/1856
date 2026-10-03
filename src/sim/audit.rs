@@ -7,7 +7,7 @@
 //! `check` is read-only and cheap enough to run every day of a test; the
 //! cross-system tests in `tests.rs` and `lab audit` run it across seeds.
 
-use super::events::{Cruelty, EventKind, MAX_CASCADE_DEPTH, Suspect};
+use super::events::{Cruelty, EventKind, Hardship, MAX_CASCADE_DEPTH, Suspect};
 use super::wardrobe::{self, ITEMS};
 use super::warrant::{Held, State};
 use super::world::{NpcId, World};
@@ -870,6 +870,28 @@ fn wagons(b: &mut Books) {
                 "wagon-blame",
                 format!("#{} a teamster blames his own side for the road", e.id),
             ),
+            // The wake gives what the dead died of, and nothing else.
+            (EventKind::FellSick { disease, .. }, EventKind::Wake { .. }) => {
+                let died_of = w.events[cause as usize]
+                    .parent
+                    .map(|p| &w.events[p as usize].kind);
+                if !matches!(died_of, Some(EventKind::Perished { cause: Hardship::Sickness(d), .. }) if d == disease)
+                {
+                    b.breach(
+                        "wake-sick",
+                        format!("#{} caught something the dead didn't have", e.id),
+                    );
+                }
+            }
+            // Only the sick man's own house goes looking for a poisoner.
+            (EventKind::Belief { holder, .. }, EventKind::FellSick { who, .. })
+                if w.npc(*holder).family != w.npc(*who).family =>
+            {
+                b.breach(
+                    "fever-blame",
+                    format!("#{} a stranger blames someone for a fever", e.id),
+                )
+            }
             _ => {}
         }
     }
